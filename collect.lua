@@ -971,7 +971,7 @@ function PandoruyHub:Window(GuiConfig)
         if GuiConfig.Image then
             MainButton.Image = "rbxassetid://" .. tostring(GuiConfig.Image)
         else
-            MainButton.Image = "rbxassetid://105703453649379"
+            MainButton.Image = "rbxassetid://133204178755303"
         end
         MainButton.ScaleType = Enum.ScaleType.Fit
 

@@ -607,8 +607,8 @@ function PandoruyHub:Window(GuiConfig)
     HeaderIcon.AnchorPoint = Vector2.new(0, 0.5)
     HeaderIcon.BackgroundTransparency = 1
     HeaderIcon.BorderSizePixel = 0
-    HeaderIcon.Position = UDim2.new(0, 10, 0.5, 0)
-    HeaderIcon.Size = UDim2.new(0, 22, 0, 22)
+    HeaderIcon.Position = UDim2.new(0, 8, 0.5, 0)
+    HeaderIcon.Size = UDim2.new(0, 32, 0, 32)
     HeaderIcon.ScaleType = Enum.ScaleType.Fit
     if GuiConfig.HeaderIcon then
         HeaderIcon.Image = "rbxassetid://" .. tostring(GuiConfig.HeaderIcon)
@@ -627,8 +627,8 @@ function PandoruyHub:Window(GuiConfig)
     TextLabel.BackgroundTransparency = 0.9990000128746033
     TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel.BorderSizePixel = 0
-    TextLabel.Size = UDim2.new(1, -136, 1, 0)
-    TextLabel.Position = UDim2.new(0, 40, 0, 0)
+    TextLabel.Size = UDim2.new(1, -144, 1, 0)
+    TextLabel.Position = UDim2.new(0, 46, 0, 0)
     TextLabel.Parent = Top
 
     UICorner1.Parent = Top
@@ -642,8 +642,8 @@ function PandoruyHub:Window(GuiConfig)
     TextLabel1.BackgroundTransparency = 0.9990000128746033
     TextLabel1.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel1.BorderSizePixel = 0
-    TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 134), 1, 0)
-    TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 45, 0, 0)
+    TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 140), 1, 0)
+    TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 51, 0, 0)
     TextLabel1.Parent = Top
 
     Close.Font = Enum.Font.SourceSans

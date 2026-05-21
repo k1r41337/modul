@@ -603,6 +603,21 @@ function PandoruyHub:Window(GuiConfig)
     Top.Name = "Top"
     Top.Parent = Main
 
+    local HeaderIcon = Instance.new("ImageLabel")
+    HeaderIcon.AnchorPoint = Vector2.new(0, 0.5)
+    HeaderIcon.BackgroundTransparency = 1
+    HeaderIcon.BorderSizePixel = 0
+    HeaderIcon.Position = UDim2.new(0, 10, 0.5, 0)
+    HeaderIcon.Size = UDim2.new(0, 22, 0, 22)
+    HeaderIcon.ScaleType = Enum.ScaleType.Fit
+    if GuiConfig.HeaderIcon then
+        HeaderIcon.Image = "rbxassetid://" .. tostring(GuiConfig.HeaderIcon)
+    else
+        HeaderIcon.Image = "rbxassetid://81652699287721"
+    end
+    HeaderIcon.Name = "HeaderIcon"
+    HeaderIcon.Parent = Top
+
     TextLabel.Font = Enum.Font.GothamBold
     TextLabel.Text = GuiConfig.Title
     TextLabel.TextColor3 = GuiConfig.Color
@@ -612,8 +627,8 @@ function PandoruyHub:Window(GuiConfig)
     TextLabel.BackgroundTransparency = 0.9990000128746033
     TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel.BorderSizePixel = 0
-    TextLabel.Size = UDim2.new(1, -100, 1, 0)
-    TextLabel.Position = UDim2.new(0, 10, 0, 0)
+    TextLabel.Size = UDim2.new(1, -136, 1, 0)
+    TextLabel.Position = UDim2.new(0, 40, 0, 0)
     TextLabel.Parent = Top
 
     UICorner1.Parent = Top
@@ -627,8 +642,8 @@ function PandoruyHub:Window(GuiConfig)
     TextLabel1.BackgroundTransparency = 0.9990000128746033
     TextLabel1.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel1.BorderSizePixel = 0
-    TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 104), 1, 0)
-    TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 15, 0, 0)
+    TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 134), 1, 0)
+    TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 45, 0, 0)
     TextLabel1.Parent = Top
 
     Close.Font = Enum.Font.SourceSans
@@ -785,9 +800,79 @@ function PandoruyHub:Window(GuiConfig)
     ScrollTab.BackgroundTransparency = 0.9990000128746033
     ScrollTab.BorderColor3 = Color3.fromRGB(0, 0, 0)
     ScrollTab.BorderSizePixel = 0
-    ScrollTab.Size = UDim2.new(1, 0, 1, 0)
+    ScrollTab.Size = UDim2.new(1, 0, 1, -56)
     ScrollTab.Name = "ScrollTab"
     ScrollTab.Parent = LayersTab
+
+    local UserFrame = Instance.new("Frame")
+    UserFrame.AnchorPoint = Vector2.new(0, 1)
+    UserFrame.Position = UDim2.new(0, 0, 1, -4)
+    UserFrame.Size = UDim2.new(1, 0, 0, 48)
+    UserFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    UserFrame.BackgroundTransparency = 0.92
+    UserFrame.BorderSizePixel = 0
+    UserFrame.Name = "UserFrame"
+    UserFrame.Parent = LayersTab
+
+    local UserFrameCorner = Instance.new("UICorner")
+    UserFrameCorner.CornerRadius = UDim.new(0, 6)
+    UserFrameCorner.Parent = UserFrame
+
+    local UserFrameStroke = Instance.new("UIStroke")
+    UserFrameStroke.Color = Color3.fromRGB(255, 255, 255)
+    UserFrameStroke.Transparency = 0.85
+    UserFrameStroke.Thickness = 1
+    UserFrameStroke.Parent = UserFrame
+
+    local Avatar = Instance.new("ImageLabel")
+    Avatar.AnchorPoint = Vector2.new(0, 0.5)
+    Avatar.Position = UDim2.new(0, 6, 0.5, 0)
+    Avatar.Size = UDim2.new(0, 36, 0, 36)
+    Avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    Avatar.BackgroundTransparency = 0.4
+    Avatar.BorderSizePixel = 0
+    Avatar.ScaleType = Enum.ScaleType.Crop
+    Avatar.Name = "Avatar"
+    Avatar.Parent = UserFrame
+
+    local AvatarCorner = Instance.new("UICorner")
+    AvatarCorner.CornerRadius = UDim.new(1, 0)
+    AvatarCorner.Parent = Avatar
+
+    local AvatarStroke = Instance.new("UIStroke")
+    AvatarStroke.Color = GuiConfig.Color
+    AvatarStroke.Transparency = 0.4
+    AvatarStroke.Thickness = 1
+    AvatarStroke.Parent = Avatar
+
+    pcall(function()
+        if LocalPlayer and LocalPlayer.UserId then
+            Avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150"
+        end
+    end)
+
+    local function maskUsername(name)
+        if not name or #name == 0 then return "Player" end
+        if #name <= 2 then return name end
+        local visible = name:sub(1, math.min(4, #name))
+        return visible .. string.rep("*", math.max(4, #name - #visible))
+    end
+
+    local UserName = Instance.new("TextLabel")
+    UserName.AnchorPoint = Vector2.new(0, 0.5)
+    UserName.Position = UDim2.new(0, 50, 0.5, 0)
+    UserName.Size = UDim2.new(1, -56, 1, -8)
+    UserName.BackgroundTransparency = 1
+    UserName.BorderSizePixel = 0
+    UserName.Font = Enum.Font.GothamBold
+    UserName.Text = maskUsername(username)
+    UserName.TextColor3 = Color3.fromRGB(235, 235, 240)
+    UserName.TextSize = 13
+    UserName.TextXAlignment = Enum.TextXAlignment.Left
+    UserName.TextYAlignment = Enum.TextYAlignment.Center
+    UserName.TextTruncate = Enum.TextTruncate.AtEnd
+    UserName.Name = "UserName"
+    UserName.Parent = UserFrame
 
     UIListLayout.Padding = UDim.new(0, 3)
     UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder

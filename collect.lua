@@ -2500,6 +2500,7 @@ function PandoruyHub:Window(GuiConfig)
                 end
 
                 local DropdownFunc = { Value = DropdownConfig.Default, Options = DropdownConfig.Options }
+                DropdownFunc._rendered = false  -- lazy: frame opsi baru dibangun saat dropdown pertama dibuka
 
                 local Dropdown = Instance.new("Frame")
                 local DropdownButton = Instance.new("TextButton")
@@ -2565,15 +2566,9 @@ function PandoruyHub:Window(GuiConfig)
 
                 DropdownButton.Activated:Connect(function()
                     if not MoreBlur.Visible then
-                        -- Call OnOpen callback if provided (for auto-refresh)
-                        if DropdownConfig.OnOpen and typeof(DropdownConfig.OnOpen) == "function" then
-                            pcall(function()
-                                local newItems = DropdownConfig.OnOpen()
-                                if newItems and type(newItems) == "table" then
-                                    DropdownFunc:SetValues(newItems, DropdownFunc.Value)
-                                end
-                            end)
-                        end
+                        -- Lazy render: bangun frame opsi sekarang (saat dibuka), bukan saat load.
+                        -- _openRefresh juga menjalankan OnOpen (auto-refresh) bila ada.
+                        DropdownFunc:_openRefresh()
                         MoreBlur.Visible = true
                         DropPageLayout:JumpToIndex(SelectOptionsFrame.LayoutOrder)
                         TweenService:Create(MoreBlur, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
@@ -2758,8 +2753,10 @@ function PandoruyHub:Window(GuiConfig)
                     SaveConfig()
 
                     local texts = {}
+                    local hasFrames = false
                     for _, Drop in ScrollSelect:GetChildren() do
                         if Drop.Name == "Option" and Drop:FindFirstChild("OptionText") then
+                            hasFrames = true
                             local v = Drop:GetAttribute("RealValue")
                             local selected = DropdownConfig.Multi and table.find(DropdownFunc.Value, v) or
                                 DropdownFunc.Value == v
@@ -2778,6 +2775,28 @@ function PandoruyHub:Window(GuiConfig)
                                     { Transparency = 0.999 }):Play()
                                 TweenService:Create(Drop, TweenInfo.new(0.1), { BackgroundTransparency = 0.999 }):Play()
                             end
+                        end
+                    end
+
+                    -- Lazy: kalau frame opsi belum dibangun (dropdown belum pernah dibuka),
+                    -- hitung label terpilih langsung dari Options — tanpa bikin/iterasi frame.
+                    if not hasFrames then
+                        local function labelFor(val)
+                            for _, opt in ipairs(DropdownFunc.Options or {}) do
+                                if typeof(opt) == "table" and opt.Value ~= nil then
+                                    if opt.Value == val then return tostring(opt.Label) end
+                                elseif opt == val then
+                                    return tostring(opt)
+                                end
+                            end
+                            return tostring(val)
+                        end
+                        if DropdownConfig.Multi then
+                            for _, v in ipairs(DropdownFunc.Value or {}) do
+                                table.insert(texts, labelFor(v))
+                            end
+                        elseif DropdownFunc.Value ~= nil then
+                            table.insert(texts, labelFor(DropdownFunc.Value))
                         end
                     end
 
@@ -2803,18 +2822,52 @@ function PandoruyHub:Window(GuiConfig)
                     return self.Value
                 end
 
+                -- Bangun (ulang) frame opsi dari list. Hanya dipanggil saat dropdown
+                -- dibuka / di-refresh — bukan saat load.
+                function DropdownFunc:_buildFrames(list)
+                    for _, f in ipairs(ScrollSelect:GetChildren()) do
+                        if f.Name == "Option" then f:Destroy() end
+                    end
+                    DropCount = 0
+                    for _, v in ipairs(list or {}) do
+                        DropdownFunc:AddOption(v)
+                    end
+                    DropdownFunc._rendered = true
+                end
+
+                -- Dipanggil saat dropdown dibuka: jalankan OnOpen (auto-refresh) bila ada,
+                -- lalu bangun frame opsi bila belum dirender (atau selalu rebuild untuk OnOpen).
+                function DropdownFunc:_openRefresh()
+                    local list = DropdownFunc.Options
+                    if DropdownConfig.OnOpen and typeof(DropdownConfig.OnOpen) == "function" then
+                        local ok, newItems = pcall(DropdownConfig.OnOpen)
+                        if ok and type(newItems) == "table" then
+                            DropdownFunc.Options = newItems
+                            list = newItems
+                        end
+                    end
+                    if (not DropdownFunc._rendered) or DropdownConfig.OnOpen then
+                        DropdownFunc:_buildFrames(list)
+                        DropdownFunc:Set(DropdownFunc.Value)
+                    end
+                end
+
                 function DropdownFunc:SetValues(newList, selecting)
                     newList = newList or {}
                     selecting = selecting or (DropdownConfig.Multi and {} or nil)
-                    DropdownFunc:Clear()
-                    for _, v in ipairs(newList) do
-                        DropdownFunc:AddOption(v)
-                    end
                     DropdownFunc.Options = newList
+                    -- Lazy: hanya rebuild frame kalau sudah pernah dirender (dropdown
+                    -- sedang/pernah dibuka). Kalau belum, Set() cukup update teks + callback
+                    -- tanpa bikin frame apa pun.
+                    if DropdownFunc._rendered then
+                        DropdownFunc:_buildFrames(newList)
+                    end
                     DropdownFunc:Set(selecting)
                 end
 
-                DropdownFunc:SetValues(DropdownFunc.Options, DropdownFunc.Value)
+                -- Init: TIDAK bangun frame opsi (hemat load). Cukup set teks terpilih +
+                -- fire callback dari nilai config/Default.
+                DropdownFunc:Set(DropdownFunc.Value)
 
                 CountItem = CountItem + 1
                 CountDropdown = CountDropdown + 1

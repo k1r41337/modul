@@ -2773,12 +2773,18 @@ function PandoruyHub:Window(GuiConfig)
 
                     local texts = {}
                     local hasFrames = false
+                    local orderIdx = 0
                     for _, Drop in ScrollSelect:GetChildren() do
                         if Drop.Name == "Option" and Drop:FindFirstChild("OptionText") then
                             hasFrames = true
+                            orderIdx = orderIdx + 1
                             local v = Drop:GetAttribute("RealValue")
                             local selected = DropdownConfig.Multi and table.find(DropdownFunc.Value, v) or
                                 DropdownFunc.Value == v
+
+                            -- Opsi terpilih naik ke atas (gampang dicari & di-unselect).
+                            -- Urutan asli dalam tiap grup dipertahankan via orderIdx.
+                            Drop.LayoutOrder = selected and orderIdx or (100000 + orderIdx)
 
                             if selected then
                                 TweenService:Create(Drop.ChooseFrame, TweenInfo.new(0.2),

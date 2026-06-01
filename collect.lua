@@ -2773,18 +2773,12 @@ function PandoruyHub:Window(GuiConfig)
 
                     local texts = {}
                     local hasFrames = false
-                    local orderIdx = 0
                     for _, Drop in ScrollSelect:GetChildren() do
                         if Drop.Name == "Option" and Drop:FindFirstChild("OptionText") then
                             hasFrames = true
-                            orderIdx = orderIdx + 1
                             local v = Drop:GetAttribute("RealValue")
                             local selected = DropdownConfig.Multi and table.find(DropdownFunc.Value, v) or
                                 DropdownFunc.Value == v
-
-                            -- Opsi terpilih naik ke atas (gampang dicari & di-unselect).
-                            -- Urutan asli dalam tiap grup dipertahankan via orderIdx.
-                            Drop.LayoutOrder = selected and orderIdx or (100000 + orderIdx)
 
                             if selected then
                                 TweenService:Create(Drop.ChooseFrame, TweenInfo.new(0.2),
@@ -2860,6 +2854,22 @@ function PandoruyHub:Window(GuiConfig)
                     DropdownFunc._rendered = true
                 end
 
+                -- Naikkan opsi terpilih ke atas. Dipanggil HANYA saat dropdown dibuka
+                -- (bukan saat milih), jadi list nggak loncat-loncat saat lagi klik.
+                -- Urutan asli dalam tiap grup dipertahankan via idx.
+                function DropdownFunc:_reorderSelectedTop()
+                    local idx = 0
+                    for _, Drop in ipairs(ScrollSelect:GetChildren()) do
+                        if Drop.Name == "Option" and Drop:FindFirstChild("OptionText") then
+                            idx = idx + 1
+                            local v = Drop:GetAttribute("RealValue")
+                            local selected = DropdownConfig.Multi and table.find(DropdownFunc.Value, v) or
+                                DropdownFunc.Value == v
+                            Drop.LayoutOrder = selected and idx or (100000 + idx)
+                        end
+                    end
+                end
+
                 -- Dipanggil saat dropdown dibuka: jalankan OnOpen (auto-refresh) bila ada,
                 -- lalu bangun frame opsi bila belum dirender (atau selalu rebuild untuk OnOpen).
                 function DropdownFunc:_openRefresh()
@@ -2875,6 +2885,8 @@ function PandoruyHub:Window(GuiConfig)
                         DropdownFunc:_buildFrames(list)
                         DropdownFunc:Set(DropdownFunc.Value)
                     end
+                    -- Reorder tiap kali dibuka (termasuk static dropdown yang tidak rebuild).
+                    DropdownFunc:_reorderSelectedTop()
                 end
 
                 function DropdownFunc:SetValues(newList, selecting)

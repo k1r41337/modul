@@ -1560,14 +1560,33 @@ function PandoruyHub:Window(GuiConfig)
                 end
             end
 
+            -- Instant resize (tanpa tween, tanpa task.wait) — dipakai saat build &
+            -- ChildAdded supaya load TIDAK nunggu 0.5s per section/item. Versi tween
+            -- (UpdateSizeSection) hanya dipakai untuk animasi toggle klik manual.
+            local function UpdateSizeSectionInstant()
+                if OpenSection then
+                    local SectionSizeYWitdh = 38
+                    for _, v in SectionAdd:GetChildren() do
+                        if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" then
+                            SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
+                        end
+                    end
+                    Section.Size = UDim2.new(1, 1, 0, SectionSizeYWitdh)
+                    SectionAdd.Size = UDim2.new(1, 0, 0, SectionSizeYWitdh - 38)
+                    SectionDecideFrame.Size = UDim2.new(1, 0, 0, 2)
+                    if FeatureFrame and FeatureFrame.Parent then FeatureFrame.Rotation = 90 end
+                    UpdateSizeScroll()
+                end
+            end
+
+            -- NOTE: jangan panggil UpdateSizeSection() (yang ber-task.wait 0.5s) saat build.
+            -- Ukuran awal diatur instan oleh blok direct-set di bawah + ChildAdded instant.
             if AlwaysOpen == true then
                 SectionButton:Destroy()
                 FeatureFrame:Destroy()
                 OpenSection = true
-                UpdateSizeSection()
             elseif AlwaysOpen == false then
                 OpenSection = true
-                UpdateSizeSection()
             else
                 OpenSection = false
             end
@@ -1605,8 +1624,8 @@ function PandoruyHub:Window(GuiConfig)
                 UpdateSizeScroll()
             end
 
-            SectionAdd.ChildAdded:Connect(UpdateSizeSection)
-            SectionAdd.ChildRemoved:Connect(UpdateSizeSection)
+            SectionAdd.ChildAdded:Connect(UpdateSizeSectionInstant)
+            SectionAdd.ChildRemoved:Connect(UpdateSizeSectionInstant)
 
             local layout = ScrolLayers:FindFirstChildOfClass("UIListLayout")
             if layout then

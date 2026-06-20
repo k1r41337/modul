@@ -737,7 +737,7 @@ function PandoruyHub:Window(GuiConfig)
         local pad = Instance.new("UIPadding", bar) pad.PaddingLeft = UDim.new(0, 8) pad.PaddingRight = UDim.new(0, 12)
         local lay = Instance.new("UIListLayout", bar) lay.FillDirection = Enum.FillDirection.Horizontal lay.VerticalAlignment = Enum.VerticalAlignment.Center lay.Padding = UDim.new(0, 7) lay.SortOrder = Enum.SortOrder.LayoutOrder
         local ico = Instance.new("ImageLabel") ico.LayoutOrder = 1 ico.BackgroundTransparency = 1 ico.Size = UDim2.fromOffset(20, 20) ico.ScaleType = Enum.ScaleType.Fit ico.Image = "rbxassetid://" .. tostring(GuiConfig.HeaderIcon or "81652699287721") ico.ZIndex = 51 ico.Parent = bar
-        local txt = Instance.new("TextLabel") txt.LayoutOrder = 2 txt.BackgroundTransparency = 1 txt.AutomaticSize = Enum.AutomaticSize.X txt.Size = UDim2.new(0, 0, 1, 0) txt.Font = Enum.Font.GothamBold txt.TextSize = 13 txt.TextColor3 = Color3.fromRGB(235, 235, 240) txt.TextYAlignment = Enum.TextYAlignment.Center txt.ZIndex = 51 txt.Text = brand txt.Parent = bar
+        local txt = Instance.new("TextLabel") txt.LayoutOrder = 2 txt.BackgroundTransparency = 1 txt.AutomaticSize = Enum.AutomaticSize.X txt.Size = UDim2.new(0, 0, 1, 0) txt.Font = Enum.Font.GothamBold txt.TextSize = 13 txt.TextColor3 = Color3.fromRGB(180, 160, 255) txt.TextYAlignment = Enum.TextYAlignment.Center txt.ZIndex = 51 txt.Text = brand txt.Parent = bar
         local WIN = 60 local rolling, idx, total, count, acc = {}, 1, 0, 0, 0 for i = 1, WIN do rolling[i] = 0 end
         RunS.RenderStepped:Connect(function(dt)
             if not bar.Parent then return end

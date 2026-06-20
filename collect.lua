@@ -717,14 +717,21 @@ function PandoruyHub:Window(GuiConfig)
         local bar = Instance.new("Frame")
         bar.Name = "PandoruyStatBar"
         bar.AnchorPoint = Vector2.new(0.5, 0)
-        bar.Position = UDim2.new(0.5, 0, 0, 6)
+        bar.Position = UDim2.new(0.5, 0, 0, 4)
         bar.AutomaticSize = Enum.AutomaticSize.X
         bar.Size = UDim2.new(0, 0, 0, 30)
         bar.BackgroundColor3 = Color3.fromRGB(20, 20, 27)
         bar.BackgroundTransparency = 0.05
         bar.BorderSizePixel = 0
         bar.ZIndex = 50
-        bar.Parent = Chloeex
+        local StatGui = Instance.new("ScreenGui")
+        StatGui.Name = "PandoruyStatGui"
+        StatGui.ResetOnSpawn = false
+        StatGui.IgnoreGuiInset = true
+        StatGui.DisplayOrder = 99999
+        StatGui.Parent = Chloeex.Parent
+        pcall(function() Chloeex.Destroying:Connect(function() pcall(function() StatGui:Destroy() end) end) end)
+        bar.Parent = StatGui
         Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
         local barStroke = Instance.new("UIStroke", bar) barStroke.Color = GuiConfig.Color or Color3.fromRGB(150, 120, 255) barStroke.Thickness = 1 barStroke.Transparency = 0.3
         local pad = Instance.new("UIPadding", bar) pad.PaddingLeft = UDim.new(0, 8) pad.PaddingRight = UDim.new(0, 12)

@@ -709,6 +709,42 @@ function PandoruyHub:Window(GuiConfig)
     Fullscreen.Name = "Fullscreen"
     Fullscreen.Parent = Top
 
+    -- ===== STATUS BAR atas-tengah (icon + brand + jam + FPS + ping) =====
+    do
+        local RunS = game:GetService("RunService")
+        local Stats = game:GetService("Stats")
+        local brand = (tostring(GuiConfig.Title or "Pandoruy"):match("^%s*([^|]+)") or "Pandoruy"):gsub("%s+$", "")
+        local bar = Instance.new("Frame")
+        bar.Name = "PandoruyStatBar"
+        bar.AnchorPoint = Vector2.new(0.5, 0)
+        bar.Position = UDim2.new(0.5, 0, 0, 6)
+        bar.AutomaticSize = Enum.AutomaticSize.X
+        bar.Size = UDim2.new(0, 0, 0, 30)
+        bar.BackgroundColor3 = Color3.fromRGB(20, 20, 27)
+        bar.BackgroundTransparency = 0.05
+        bar.BorderSizePixel = 0
+        bar.ZIndex = 50
+        bar.Parent = Chloeex
+        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+        local barStroke = Instance.new("UIStroke", bar) barStroke.Color = GuiConfig.Color or Color3.fromRGB(150, 120, 255) barStroke.Thickness = 1 barStroke.Transparency = 0.3
+        local pad = Instance.new("UIPadding", bar) pad.PaddingLeft = UDim.new(0, 8) pad.PaddingRight = UDim.new(0, 12)
+        local lay = Instance.new("UIListLayout", bar) lay.FillDirection = Enum.FillDirection.Horizontal lay.VerticalAlignment = Enum.VerticalAlignment.Center lay.Padding = UDim.new(0, 7) lay.SortOrder = Enum.SortOrder.LayoutOrder
+        local ico = Instance.new("ImageLabel") ico.LayoutOrder = 1 ico.BackgroundTransparency = 1 ico.Size = UDim2.fromOffset(20, 20) ico.ScaleType = Enum.ScaleType.Fit ico.Image = "rbxassetid://" .. tostring(GuiConfig.HeaderIcon or "81652699287721") ico.ZIndex = 51 ico.Parent = bar
+        local txt = Instance.new("TextLabel") txt.LayoutOrder = 2 txt.BackgroundTransparency = 1 txt.AutomaticSize = Enum.AutomaticSize.X txt.Size = UDim2.new(0, 0, 1, 0) txt.Font = Enum.Font.GothamBold txt.TextSize = 13 txt.TextColor3 = Color3.fromRGB(235, 235, 240) txt.TextYAlignment = Enum.TextYAlignment.Center txt.ZIndex = 51 txt.Text = brand txt.Parent = bar
+        local WIN = 60 local rolling, idx, total, count, acc = {}, 1, 0, 0, 0 for i = 1, WIN do rolling[i] = 0 end
+        RunS.RenderStepped:Connect(function(dt)
+            if not bar.Parent then return end
+            if count >= WIN then total = total - (rolling[idx] or 0) else count = count + 1 end
+            rolling[idx] = dt total = total + dt idx = idx + 1 if idx > WIN then idx = 1 end
+            acc = acc + dt
+            if acc >= 0.25 then acc = 0
+                local fps = (total > 0 and count > 0) and math.clamp(math.floor((count / total) + 0.5), 1, 360) or 0
+                local ping = 0 pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5) end)
+                txt.Text = string.format("%s  |  %s  |  %d FPS  |  %d ms", brand, os.date("%H:%M:%S"), fps, ping)
+            end
+        end)
+    end
+
     ImageLabel3.Image = "rbxassetid://103624489836882"
     ImageLabel3.AnchorPoint = Vector2.new(0.5, 0.5)
     ImageLabel3.BackgroundColor3 = Color3.fromRGB(255, 255, 255)

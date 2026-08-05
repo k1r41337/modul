@@ -114,6 +114,7 @@ local Icons = {
     egg       = "rbxassetid://14394875994",
     farm      = "rbxassetid://15667131313",
     inventory = "rbxassetid://8601111810",
+    shovel    = "rbxassetid://10098013519",
 }
 
 local UserInputService = game:GetService("UserInputService")

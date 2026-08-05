@@ -2990,7 +2990,7 @@ function PandoruyHub:Window(GuiConfig)
                 SubSection.Name = "SubSection"
                 SubSection.Parent = SectionAdd
                 SubSection.BackgroundTransparency = 1
-                SubSection.Size = UDim2.new(1, 0, 0, 22)
+                SubSection.Size = UDim2.new(1, 0, 0, 30)
                 SubSection.LayoutOrder = CountItem
 
                 local Background = Instance.new("Frame")
@@ -3009,13 +3009,119 @@ function PandoruyHub:Window(GuiConfig)
                 Label.BackgroundTransparency = 1
                 Label.Font = Enum.Font.GothamBold
                 Label.Text = "── [ " .. title .. " ] ──"
-                Label.TextColor3 = Color3.fromRGB(230, 230, 230)
-                Label.TextSize = 12
+                Label.TextColor3 = Color3.fromRGB(235, 235, 235)
+                Label.TextSize = 14
                 Label.TextXAlignment = Enum.TextXAlignment.Left
 
                 CountItem = CountItem + 1
                 return SubSection
             end
+
+            -- AddRuleRow() — ADDITIVE (backward-compat): baris rule compact ala "Saved Rules":
+            -- nomor + summary (RichText, bisa warnain nama fruit) + tombol Edit (ungu) + Delete
+            -- (merah) inline. Return {SetSummary, Destroy}. Method baru; gak ganggu project lain.
+            function Items:AddRuleRow(cfg)
+                cfg = cfg or {}
+                local Row = Instance.new("Frame")
+                Row.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                Row.BackgroundTransparency = 0.935
+                Row.Size = UDim2.new(1, 0, 0, 34)
+                Row.LayoutOrder = CountItem
+                Row.Name = "RuleRow"
+                Row.Parent = SectionAdd
+                Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 6)
+
+                local Num = Instance.new("TextLabel")
+                Num.BackgroundTransparency = 1
+                Num.Position = UDim2.new(0, 10, 0, 0)
+                Num.Size = UDim2.new(0, 18, 1, 0)
+                Num.Font = Enum.Font.GothamBold
+                Num.Text = tostring(cfg.Index or "") .. "."
+                Num.TextColor3 = Color3.fromRGB(230, 230, 230)
+                Num.TextSize = 12
+                Num.TextXAlignment = Enum.TextXAlignment.Left
+                Num.Parent = Row
+
+                local Sum = Instance.new("TextLabel")
+                Sum.BackgroundTransparency = 1
+                Sum.Position = UDim2.new(0, 32, 0, 0)
+                Sum.Size = UDim2.new(1, cfg.OnEdit and -110 or -78, 1, 0)
+                Sum.Font = Enum.Font.Gotham
+                Sum.RichText = true
+                Sum.Text = tostring(cfg.Summary or "")
+                Sum.TextColor3 = Color3.fromRGB(165, 165, 165)
+                Sum.TextSize = 13
+                Sum.TextXAlignment = Enum.TextXAlignment.Left
+                Sum.TextTruncate = Enum.TextTruncate.AtEnd
+                Sum.Parent = Row
+
+                -- icon pake sheet Roblox (rbxassetid://3926305904, grid 36) biar pasti render (glyph font gak reliable)
+                local function mkBtn(xoff, color, iconOff)
+                    local b = Instance.new("TextButton")
+                    b.AnchorPoint = Vector2.new(1, 0.5)
+                    b.Position = UDim2.new(1, xoff, 0.5, 0)
+                    b.Size = UDim2.new(0, 30, 0, 22)
+                    b.BackgroundColor3 = color
+                    b.Text = ""
+                    b.AutoButtonColor = true
+                    b.Parent = Row
+                    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+                    local ic = Instance.new("ImageLabel")
+                    ic.AnchorPoint = Vector2.new(0.5, 0.5)
+                    ic.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    ic.Size = UDim2.new(0, 14, 0, 14)
+                    ic.BackgroundTransparency = 1
+                    ic.Image = "rbxassetid://3926305904"
+                    ic.ImageRectOffset = iconOff
+                    ic.ImageRectSize = Vector2.new(36, 36)
+                    ic.ImageColor3 = Color3.fromRGB(255, 255, 255)
+                    ic.Parent = b
+                    return b
+                end
+                if cfg.OnDelete then local delBtn = mkBtn(-6, Color3.fromRGB(255, 60, 60), Vector2.new(924, 724)) delBtn.MouseButton1Click:Connect(function() pcall(cfg.OnDelete) end) end -- trash (X) delete
+                if cfg.OnEdit then local editBtn = mkBtn(-40, GuiConfig.Color or Color3.fromRGB(122, 92, 255), Vector2.new(964, 324)) editBtn.MouseButton1Click:Connect(function() pcall(cfg.OnEdit) end) end -- edit OPSIONAL (default gak muncul)
+
+                local RowFunc = {}
+                function RowFunc:SetSummary(t) Sum.Text = tostring(t or "") end
+                function RowFunc:Destroy() pcall(function() Row:Destroy() end) end
+
+                CountItem = CountItem + 1
+                return RowFunc
+            end
+
+            -- Clear() — ADDITIVE (backward-compat): hapus semua item di section, buat pola
+            -- dynamic "clear + rebuild" (mis. daftar rule yang bisa add/hapus). ChildRemoved
+            -- udah nge-trigger auto-resize, jadi section otomatis nyusut. Method baru; project
+            -- lain yang gak manggil :Clear() gak keganggu sama sekali.
+            function Items:Clear()
+                for _, v in ipairs(SectionAdd:GetChildren()) do
+                    if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" then
+                        pcall(function() v:Destroy() end)
+                    end
+                end
+                CountItem = 0
+                pcall(UpdateSizeSectionInstant)
+            end
+            -- Mark(): boundary (LayoutOrder saat ini). ClearFrom(mark): hapus HANYA control yang di-add SETELAH boundary (LayoutOrder >= mark), sisanya (di atas boundary) UTUH.
+            -- Buat UI dinamis parsial: control statis di atas boundary (mis. dropdown Categories) gak keurusan, cuma bagian dinamis di bawahnya yg di-rebuild -> gak nutup dropdown, gak crash.
+            function Items:Mark()
+                return CountItem
+            end
+            function Items:ClearFrom(mark)
+                mark = tonumber(mark) or 0
+                for _, v in ipairs(SectionAdd:GetChildren()) do
+                    if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" and v:IsA("GuiObject") and v.LayoutOrder >= mark then
+                        pcall(function() v:Destroy() end)
+                    end
+                end
+                if CountItem > mark then CountItem = mark end
+                pcall(UpdateSizeSectionInstant)
+            end
+
+            -- live-update section header text (dipakai buat per-plant summary yg count-nya berubah) + show/hide section
+            function Items:SetTitle(t) pcall(function() SectionTitle.Text = tostring(t) end) end
+            function Items:SetVisible(v) pcall(function() Section.Visible = (v ~= false) end) end
+            Items.__section = Section
 
             CountSection = CountSection + 1
             return Items

@@ -740,8 +740,11 @@ function PandoruyHub:Window(GuiConfig)
         local ico = Instance.new("ImageLabel") ico.LayoutOrder = 1 ico.BackgroundTransparency = 1 ico.Size = UDim2.fromOffset(20, 20) ico.ScaleType = Enum.ScaleType.Fit ico.Image = "rbxassetid://" .. tostring(GuiConfig.HeaderIcon or "81652699287721") ico.ZIndex = 51 ico.Parent = bar
         local txt = Instance.new("TextLabel") txt.LayoutOrder = 2 txt.BackgroundTransparency = 1 txt.AutomaticSize = Enum.AutomaticSize.X txt.Size = UDim2.new(0, 0, 1, 0) txt.Font = Enum.Font.GothamBold txt.TextSize = 13 txt.TextColor3 = Color3.fromRGB(180, 160, 255) txt.TextYAlignment = Enum.TextYAlignment.Center txt.ZIndex = 51 txt.Text = brand txt.Parent = bar
         local WIN = 60 local rolling, idx, total, count, acc = {}, 1, 0, 0, 0 for i = 1, WIN do rolling[i] = 0 end
-        RunS.RenderStepped:Connect(function(dt)
-            if not bar.Parent then return end
+        local fpsConn
+        fpsConn = RunS.RenderStepped:Connect(function(dt)
+            -- Self-disconnect once the bar is gone so a re-executed hub doesn't
+            -- leave a dead per-frame handler running for every previous session.
+            if not bar.Parent then if fpsConn then fpsConn:Disconnect() end return end
             if count >= WIN then total = total - (rolling[idx] or 0) else count = count + 1 end
             rolling[idx] = dt total = total + dt idx = idx + 1 if idx > WIN then idx = 1 end
             acc = acc + dt
@@ -1443,6 +1446,21 @@ function PandoruyHub:Window(GuiConfig)
         local CountSection = 0
         function Sections:AddSection(Title, AlwaysOpen)
             local Title = Title or "Title"
+
+            -- Namespace element config keys by section title so identically-titled
+            -- elements in different sections (e.g. four "Delay Equip (sec)" inputs,
+            -- six "Auto Sprinkler" toggles) don't share one saved value and clobber
+            -- each other. Migrates the legacy title-only key once so existing
+            -- configs keep their value on first load after this fix.
+            local function sectionKey(prefix, elemTitle)
+                local key = prefix .. tostring(Title) .. "_" .. tostring(elemTitle)
+                local legacy = prefix .. tostring(elemTitle)
+                if ConfigData[key] == nil and ConfigData[legacy] ~= nil then
+                    ConfigData[key] = ConfigData[legacy]
+                end
+                return key
+            end
+
             local Section = Instance.new("Frame");
             local SectionDecideFrame = Instance.new("Frame");
             local UICorner1 = Instance.new("UICorner");
@@ -1805,7 +1823,7 @@ function PandoruyHub:Window(GuiConfig)
                 PanelConfig.SubButtonCallback = PanelConfig.SubCallback or PanelConfig.SubButtonCallback or
                     function() end
 
-                local configKey = "Panel_" .. PanelConfig.Title
+                local configKey = sectionKey("Panel_", PanelConfig.Title)
                 if ConfigData[configKey] ~= nil then
                     PanelConfig.Default = ConfigData[configKey]
                 end
@@ -2019,7 +2037,7 @@ function PandoruyHub:Window(GuiConfig)
                 ToggleConfig.Default = ToggleConfig.Default or false
                 ToggleConfig.Callback = ToggleConfig.Callback or function() end
 
-                local configKey = "Toggle_" .. ToggleConfig.Title
+                local configKey = sectionKey("Toggle_", ToggleConfig.Title)
                 if ConfigData[configKey] ~= nil then
                     ToggleConfig.Default = ConfigData[configKey]
                 end
@@ -2152,15 +2170,19 @@ function PandoruyHub:Window(GuiConfig)
                     ToggleFunc:Set(ToggleFunc.Value)
                 end)
 
-                function ToggleFunc:Set(Value)
-                    if typeof(ToggleConfig.Callback) == "function" then
+                function ToggleFunc:Set(Value, silent)
+                    ToggleFunc.Value = Value   -- keep state in sync (a direct Set() otherwise
+                                               -- left .Value stale -> next click needed twice)
+                    if not silent and typeof(ToggleConfig.Callback) == "function" then
                         local ok, err = pcall(function()
                             ToggleConfig.Callback(Value)
                         end)
                         if not ok then warn("Toggle Callback error:", err) end
                     end
-                    ConfigData[configKey] = Value
-                    SaveConfig()
+                    if not silent then
+                        ConfigData[configKey] = Value
+                        SaveConfig()
+                    end
                     if Value then
                         TweenService:Create(ToggleTitle, TweenInfo.new(0.2), { TextColor3 = GuiConfig.Color }):Play()
                         TweenService:Create(ToggleCircle, TweenInfo.new(0.2), { Position = UDim2.new(0, 15, 0, 0) })
@@ -2196,7 +2218,7 @@ function PandoruyHub:Window(GuiConfig)
                 SliderConfig.Default = SliderConfig.Default or 50
                 SliderConfig.Callback = SliderConfig.Callback or function() end
 
-                local configKey = "Slider_" .. SliderConfig.Title
+                local configKey = sectionKey("Slider_", SliderConfig.Title)
                 if ConfigData[configKey] ~= nil then
                     SliderConfig.Default = ConfigData[configKey]
                 end
@@ -2425,7 +2447,7 @@ function PandoruyHub:Window(GuiConfig)
                 InputConfig.Callback = InputConfig.Callback or function() end
                 InputConfig.Default = InputConfig.Default or ""
 
-                local configKey = "Input_" .. InputConfig.Title
+                local configKey = sectionKey("Input_", InputConfig.Title)
                 if ConfigData[configKey] ~= nil then
                     InputConfig.Default = ConfigData[configKey]
                 end
@@ -2557,7 +2579,7 @@ function PandoruyHub:Window(GuiConfig)
                 DropdownConfig.Default = DropdownConfig.Default or (DropdownConfig.Multi and {} or nil)
                 DropdownConfig.Callback = DropdownConfig.Callback or function() end
 
-                local configKey = "Dropdown_" .. DropdownConfig.Title
+                local configKey = sectionKey("Dropdown_", DropdownConfig.Title)
                 if ConfigData[configKey] ~= nil then
                     DropdownConfig.Default = ConfigData[configKey]
                 end

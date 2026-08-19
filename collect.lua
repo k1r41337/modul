@@ -2805,15 +2805,21 @@ function PandoruyHub:Window(GuiConfig)
                     end)
                 end
 
-                function DropdownFunc:Set(Value)
+                -- silent=true repaints/reselects WITHOUT persisting or firing the
+                -- consumer Callback. Used by _openRefresh so merely OPENING a dropdown
+                -- can't rewrite config or re-run the callback with a stale Value
+                -- (which would clobber a selection the consumer healed underneath us).
+                function DropdownFunc:Set(Value, silent)
                     if DropdownConfig.Multi then
                         DropdownFunc.Value = type(Value) == "table" and Value or {}
                     else
                         DropdownFunc.Value = (type(Value) == "table" and Value[1]) or Value
                     end
 
-                    ConfigData[configKey] = DropdownFunc.Value
-                    SaveConfig()
+                    if not silent then
+                        ConfigData[configKey] = DropdownFunc.Value
+                        SaveConfig()
+                    end
 
                     local texts = {}
                     local hasFrames = false
@@ -2867,7 +2873,7 @@ function PandoruyHub:Window(GuiConfig)
                         and (DropdownConfig.Multi and "Select Options" or "Select Option")
                         or table.concat(texts, ", ")
 
-                    if DropdownConfig.Callback then
+                    if not silent and DropdownConfig.Callback then
                         if DropdownConfig.Multi then
                             DropdownConfig.Callback(DropdownFunc.Value)
                         else
@@ -2927,7 +2933,7 @@ function PandoruyHub:Window(GuiConfig)
                     end
                     if (not DropdownFunc._rendered) or DropdownConfig.OnOpen then
                         DropdownFunc:_buildFrames(list)
-                        DropdownFunc:Set(DropdownFunc.Value)
+                        DropdownFunc:Set(DropdownFunc.Value, true)  -- silent: repaint only
                     end
                     -- Reorder tiap kali dibuka (termasuk static dropdown yang tidak rebuild).
                     DropdownFunc:_reorderSelectedTop()

@@ -3138,6 +3138,9 @@ function PandoruyHub:Window(GuiConfig)
             end
             function Items:ClearFrom(mark)
                 mark = tonumber(mark) or 0
+                -- Canvas nyusut saat control di-destroy -> Roblox nge-clamp CanvasPosition
+                -- ke atas. Simpan posisi scroll, restore setelah konten rebuild balik.
+                local keepPos = ScrolLayers.CanvasPosition
                 for _, v in ipairs(SectionAdd:GetChildren()) do
                     if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" and v:IsA("GuiObject") and v.LayoutOrder >= mark then
                         pcall(function() v:Destroy() end)
@@ -3145,6 +3148,22 @@ function PandoruyHub:Window(GuiConfig)
                 end
                 if CountItem > mark then CountItem = mark end
                 pcall(UpdateSizeSectionInstant)
+                if keepPos.Y > 0 then
+                    task.spawn(function()
+                        -- Tunggu canvas balik cukup gede (caller lagi re-add control,
+                        -- kadang pakai task.wait antar item), timeout 1 detik.
+                        local deadline = os.clock() + 1
+                        while os.clock() < deadline do
+                            local maxY = math.max(0, ScrolLayers.AbsoluteCanvasSize.Y - ScrolLayers.AbsoluteWindowSize.Y)
+                            if maxY + 1 >= keepPos.Y then break end
+                            task.wait(0.03)
+                        end
+                        pcall(function()
+                            local maxY = math.max(0, ScrolLayers.AbsoluteCanvasSize.Y - ScrolLayers.AbsoluteWindowSize.Y)
+                            ScrolLayers.CanvasPosition = Vector2.new(keepPos.X, math.min(keepPos.Y, maxY))
+                        end)
+                    end)
+                end
             end
 
             -- live-update section header text (dipakai buat per-plant summary yg count-nya berubah) + show/hide section

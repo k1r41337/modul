@@ -1121,9 +1121,7 @@ function PandoruyHub:Window(GuiConfig)
                 pcall(GuiFunc.OnDestroy)
             end
             if Chloeex then Chloeex:Destroy() end
-            if GuiRoot():FindFirstChild("ToggleUIButton") then
-                GuiRoot().ToggleUIButton:Destroy()
-            end
+            if GuiFunc.ToggleGui then GuiFunc.ToggleGui:Destroy() end
         end)
 
         Cancel.MouseButton1Click:Connect(function()
@@ -1134,7 +1132,8 @@ function PandoruyHub:Window(GuiConfig)
     function GuiFunc:ToggleUI()
         local ScreenGui = Instance.new("ScreenGui")
         ScreenGui.ResetOnSpawn = false -- under PlayerGui a respawn would take it
-        ScreenGui.Parent = GuiRoot()
+        ScreenGui.Parent = Chloeex.Parent -- beside its own window
+        GuiFunc.ToggleGui = ScreenGui
         ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         ScreenGui.Name = "ToggleUIButton"
 
@@ -1884,6 +1883,11 @@ function PandoruyHub:Window(GuiConfig)
 
                 function ParagraphFunc:SetTitle(title)
                     ParagraphTitle.Text = tostring(title or "")
+                    hasTitle = ParagraphTitle.Text ~= ""
+                    contentY = hasTitle and 25 or 10
+                    ParagraphTitle.Visible = hasTitle
+                    ParagraphContent.Position = UDim2.new(0, iconOffset, 0, contentY)
+                    UpdateSize()
                 end
 
                 CountItem = CountItem + 1
@@ -2507,9 +2511,13 @@ function PandoruyHub:Window(GuiConfig)
                     end
                 end)
 
-                TextBox:GetPropertyChangedSignal("Text"):Connect(function()
-                    local Valid = TextBox.Text:gsub("[^%d]", "")
-                    local ValidNumber = Valid ~= "" and math.clamp(tonumber(Valid), SliderConfig.Min, SliderConfig.Max)
+                -- the box's number is applied when the player is done typing (focus lost) or when
+                -- code writes it; while typing, an emptied box does not snap to Min
+                local function ApplyBox()
+                    -- the number as typed ("2.5", "-5"); else its digits, as before
+                    local typed = tonumber(TextBox.Text) or tonumber((TextBox.Text:gsub("[^%d]", "")))
+                    local ValidNumber = typed
+                        and math.clamp(Round(typed, SliderConfig.Increment), SliderConfig.Min, SliderConfig.Max)
                         or SliderConfig.Min
                     -- Set() writing the box is not a new value (it would run the callback twice);
                     -- a typed value clamped to the current one still shows the current one
@@ -2518,7 +2526,12 @@ function PandoruyHub:Window(GuiConfig)
                     elseif TextBox.Text ~= tostring(SliderFunc.Value) then
                         TextBox.Text = tostring(SliderFunc.Value)
                     end
+                end
+                TextBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    if TextBox:IsFocused() then return end
+                    ApplyBox()
                 end)
+                TextBox.FocusLost:Connect(ApplyBox)
                 SliderFunc:Set(SliderConfig.Default, not ConfigEnabled)
                 CountItem = CountItem + 1
                 Elements[configKey] = SliderFunc
@@ -2653,7 +2666,9 @@ function PandoruyHub:Window(GuiConfig)
                     InputTextBox.Text = Shown(Value)
                     if silent then return end
                     InputConfig.Callback(Value)
-                    Remember(configKey, Value)
+                    if not InputConfig.Password then -- a password is never written to the plaintext PDH file
+                        Remember(configKey, Value)
+                    end
                 end
 
                 InputFunc:Set(InputFunc.Value, not ConfigEnabled)
@@ -2685,7 +2700,11 @@ function PandoruyHub:Window(GuiConfig)
                     DropdownConfig.Default = ConfigData[configKey]
                 end
 
-                local DropdownFunc = { Value = DropdownConfig.Default, Options = DropdownConfig.Options }
+                local DropdownFunc = {
+                    Value = (DropdownConfig.Multi and type(DropdownConfig.Default) == "table")
+                        and table.clone(DropdownConfig.Default) or DropdownConfig.Default,
+                    Options = DropdownConfig.Options,
+                }
                 DropdownFunc._rendered = false  -- lazy: frame opsi baru dibangun saat dropdown pertama dibuka
 
                 local Dropdown = Instance.new("Frame")
@@ -2751,10 +2770,13 @@ function PandoruyHub:Window(GuiConfig)
                 UICorner11.Parent = SelectOptionsFrame
 
                 DropdownButton.Activated:Connect(function()
-                    if not MoreBlur.Visible then
+                    if not MoreBlur.Visible and not DropdownFunc._opening then
                         -- Lazy render: bangun frame opsi sekarang (saat dibuka), bukan saat load.
                         -- _openRefresh juga menjalankan OnOpen (auto-refresh) bila ada.
-                        DropdownFunc:_openRefresh()
+                        DropdownFunc._opening = true
+                        local ok, err = pcall(DropdownFunc._openRefresh, DropdownFunc)
+                        DropdownFunc._opening = false
+                        if not ok then warn("Dropdown open error:", err) end
                         MoreBlur.Visible = true
                         -- the list page by instance: a removed dropdown's page is gone, so indexes shift
                         DropPageLayout:JumpTo(DropdownFunc._container)
@@ -2795,6 +2817,11 @@ function PandoruyHub:Window(GuiConfig)
                 DropdownFunc._container = DropdownContainer
                 -- a dropdown taken away (Clear / ClearFrom / Destroy) takes its list page with it
                 Dropdown.Destroying:Connect(function()
+                    -- removed while its list is open (a section rebuilt): the list closes with it
+                    if MoreBlur.Visible and DropPageLayout.CurrentPage == DropdownContainer then
+                        MoreBlur.Visible = false
+                        DropdownSelect.Position = UDim2.new(1, 262, 0.5, 0)
+                    end
                     pcall(function() DropdownContainer:Destroy() end)
                 end)
 
@@ -2942,7 +2969,7 @@ function PandoruyHub:Window(GuiConfig)
                 -- (which would clobber a selection the consumer healed underneath us).
                 function DropdownFunc:Set(Value, silent)
                     if DropdownConfig.Multi then
-                        DropdownFunc.Value = type(Value) == "table" and Value or {}
+                        DropdownFunc.Value = type(Value) == "table" and table.clone(Value) or {}
                     else
                         DropdownFunc.Value = (type(Value) == "table" and Value[1]) or Value
                     end
@@ -3086,12 +3113,31 @@ function PandoruyHub:Window(GuiConfig)
                 -- fire callback dari nilai config/Default.
                 -- A new option list: the pick stays (even one missing from the list) and nothing is
                 -- called or saved; an open list redraws in place, the search query still applied.
+                local function sameOptionList(a, b)
+                    if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+                    for i = 1, #a do
+                        local x, y = a[i], b[i]
+                        if type(x) == "table" and type(y) == "table" then
+                            if x.Value ~= y.Value or x.Label ~= y.Label then return false end
+                        elseif x ~= y then
+                            return false
+                        end
+                    end
+                    return true
+                end
+
                 function DropdownFunc:SetOptions(newList)
-                    DropdownFunc.Options = newList or {}
-                    if DropdownFunc._rendered then
-                        DropdownFunc:_buildFrames(DropdownFunc.Options)
+                    newList = newList or {}
+                    local same = sameOptionList(DropdownFunc.Options, newList)
+                    DropdownFunc.Options = newList
+                    if DropdownFunc._rendered and not same then
+                        -- an open list keeps the place the player scrolled it to
+                        local keep = ScrollSelect.CanvasPosition
+                        DropdownFunc:_buildFrames(newList)
                         DropdownFunc:_reorderSelectedTop()
                         ApplySearch()
+                        ScrollSelect.CanvasPosition = keep
+                        task.defer(function() ScrollSelect.CanvasPosition = keep end) -- after the layout
                     end
                     DropdownFunc:Set(DropdownFunc.Value, true)
                 end
@@ -3364,6 +3410,7 @@ function PandoruyHub:Window(GuiConfig)
                             cell.FocusLost:Connect(function()
                                 local old = entry.cells[i]
                                 local typed = cell.Text
+                                if typed == old then return end -- only focused and left: not an edit
                                 local shown = typed
                                 if cfg.OnEdit then
                                     local ok, res = pcall(cfg.OnEdit, key, i, typed, old)

@@ -2,7 +2,11 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local username = Players.LocalPlayer and Players.LocalPlayer.Name or "Unknown"
 
-local gameName   = tostring(game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name)
+-- GetProductInfo is a web call: when it fails the lib still loads (the name only names the config file)
+local okName, productName = pcall(function()
+    return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+end)
+local gameName   = okName and tostring(productName) or tostring(game.PlaceId)
 gameName         = gameName:gsub("[^%w_ ]", "")
 gameName         = gameName:gsub("%s+", "_")
 
@@ -34,11 +38,25 @@ ConfigData       = {}
 Elements         = {}
 CURRENT_VERSION  = nil
 
+-- Window SaveConfig = false: the script keeps its own settings. No PDH file is read or
+-- written, and a control starts from its Default without calling its Callback.
+local ConfigEnabled = true
+
 function SaveConfig()
+    if not ConfigEnabled then return end
     if writefile then
         ConfigData._version = CURRENT_VERSION
         writefile(ConfigFile, HttpService:JSONEncode(ConfigData))
     end
+end
+
+-- A control's value kept for the PDH file and read back when a control with the same
+-- section + title is built again. With SaveConfig = false nothing is kept, so a control
+-- built again (Clear and rebuild) starts from the Default its caller passes.
+local function Remember(key, value)
+    if not ConfigEnabled then return end
+    ConfigData[key] = value
+    SaveConfig()
 end
 
 function LoadConfigFromFile()
@@ -123,6 +141,13 @@ local LocalPlayer = game:GetService("Players").LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local CoreGui = game:GetService("CoreGui")
 local viewport = workspace.CurrentCamera.ViewportSize
+
+-- Window Parent = <Instance> (e.g. PlayerGui, for an executor that cannot reach CoreGui):
+-- the window, its toggle button, the stat bar and the notifications go there instead.
+local GuiParent = nil
+local function GuiRoot()
+    return GuiParent or CoreGui
+end
 
 local function isMobileDevice()
     return UserInputService.TouchEnabled
@@ -301,13 +326,15 @@ function PandoruyHub:MakeNotify(NotifyConfig)
     NotifyConfig.Delay = NotifyConfig.Delay or 5
     local NotifyFunction = {}
     spawn(function()
-        if not CoreGui:FindFirstChild("NotifyGui") then
+        local NotifyRoot = GuiRoot()
+        if not NotifyRoot:FindFirstChild("NotifyGui") then
             local NotifyGui = Instance.new("ScreenGui");
             NotifyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            NotifyGui.ResetOnSpawn = false
             NotifyGui.Name = "NotifyGui"
-            NotifyGui.Parent = CoreGui
+            NotifyGui.Parent = NotifyRoot
         end
-        if not CoreGui.NotifyGui:FindFirstChild("NotifyLayout") then
+        if not NotifyRoot.NotifyGui:FindFirstChild("NotifyLayout") then
             local NotifyLayout = Instance.new("Frame");
             NotifyLayout.AnchorPoint = Vector2.new(1, 1)
             NotifyLayout.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -317,11 +344,11 @@ function PandoruyHub:MakeNotify(NotifyConfig)
             NotifyLayout.Position = UDim2.new(1, -30, 1, -30)
             NotifyLayout.Size = UDim2.new(0, 320, 1, 0)
             NotifyLayout.Name = "NotifyLayout"
-            NotifyLayout.Parent = CoreGui.NotifyGui
+            NotifyLayout.Parent = NotifyRoot.NotifyGui
             local Count = 0
-            CoreGui.NotifyGui.NotifyLayout.ChildRemoved:Connect(function()
+            NotifyRoot.NotifyGui.NotifyLayout.ChildRemoved:Connect(function()
                 Count = 0
-                for i, v in CoreGui.NotifyGui.NotifyLayout:GetChildren() do
+                for i, v in NotifyRoot.NotifyGui.NotifyLayout:GetChildren() do
                     TweenService:Create(
                         v,
                         TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
@@ -332,7 +359,7 @@ function PandoruyHub:MakeNotify(NotifyConfig)
             end)
         end
         local NotifyPosHeigh = 0
-        for i, v in CoreGui.NotifyGui.NotifyLayout:GetChildren() do
+        for i, v in NotifyRoot.NotifyGui.NotifyLayout:GetChildren() do
             NotifyPosHeigh = -(v.Position.Y.Offset) + v.Size.Y.Offset + 12
         end
         local NotifyFrame = Instance.new("Frame");
@@ -354,7 +381,7 @@ function PandoruyHub:MakeNotify(NotifyConfig)
         NotifyFrame.Size = UDim2.new(1, 0, 0, 150)
         NotifyFrame.Name = "NotifyFrame"
         NotifyFrame.BackgroundTransparency = 1
-        NotifyFrame.Parent = CoreGui.NotifyGui.NotifyLayout
+        NotifyFrame.Parent = NotifyRoot.NotifyGui.NotifyLayout
         NotifyFrame.AnchorPoint = Vector2.new(0, 1)
         NotifyFrame.Position = UDim2.new(0, 0, 1, -(NotifyPosHeigh))
 
@@ -411,6 +438,10 @@ function PandoruyHub:MakeNotify(NotifyConfig)
         TextLabel1.BorderSizePixel = 0
         TextLabel1.Size = UDim2.new(1, 0, 1, 0)
         TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 15, 0, 0)
+        -- the title's TextBounds is 0 until it is measured: follow it so the two never overlap
+        TextLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+            TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 15, 0, 0)
+        end)
         TextLabel1.Parent = Top
 
         Close.Font = Enum.Font.SourceSans
@@ -424,7 +455,7 @@ function PandoruyHub:MakeNotify(NotifyConfig)
         Close.BorderSizePixel = 0
         Close.Position = UDim2.new(1, -5, 0.5, 0)
         Close.Size = UDim2.new(0, 25, 0, 25)
-        Close.Name = "Close"
+        Close.Name = "CloseButton"
         Close.Parent = Top
 
         ImageLabel.Image = "rbxassetid://9886659671"
@@ -507,13 +538,20 @@ function PandoruyHub:Window(GuiConfig)
     GuiConfig["Tab Width"] = GuiConfig["Tab Width"] or 120
     GuiConfig.Version      = GuiConfig.Version or 1
 
-    -- Config folder per-game (e.g. "PandoruyHub/GAG", "PandoruyHub/KG")
-    ConfigBase = GuiConfig.ConfigFolder or "PandoruyHub"
-    ConfigFile = ConfigBase .. "/" .. username .. "/Config/PDH_" .. gameName .. ".json"
-    EnsureConfigFolders(ConfigBase)
+    GuiParent = typeof(GuiConfig.Parent) == "Instance" and GuiConfig.Parent or nil
 
-    CURRENT_VERSION        = GuiConfig.Version
-    LoadConfigFromFile()
+    ConfigEnabled = GuiConfig.SaveConfig ~= false
+    if ConfigEnabled then
+        -- Config folder per-game (e.g. "PandoruyHub/GAG", "PandoruyHub/KG")
+        ConfigBase = GuiConfig.ConfigFolder or "PandoruyHub"
+        ConfigFile = ConfigBase .. "/" .. username .. "/Config/PDH_" .. gameName .. ".json"
+        EnsureConfigFolders(ConfigBase)
+
+        CURRENT_VERSION        = GuiConfig.Version
+        LoadConfigFromFile()
+    else
+        ConfigData = {}
+    end
 
     local GuiFunc = {}
 
@@ -545,7 +583,7 @@ function PandoruyHub:Window(GuiConfig)
     Chloeex.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     Chloeex.Name = "Chloeex"
     Chloeex.ResetOnSpawn = false
-    Chloeex.Parent = game:GetService("CoreGui")
+    Chloeex.Parent = GuiRoot()
 
     DropShadowHolder.BackgroundTransparency = 1
     DropShadowHolder.BorderSizePixel = 0
@@ -645,6 +683,10 @@ function PandoruyHub:Window(GuiConfig)
     TextLabel1.BorderSizePixel = 0
     TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 140), 1, 0)
     TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 51, 0, 0)
+    TextLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+        TextLabel1.Size = UDim2.new(1, -(TextLabel.TextBounds.X + 140), 1, 0)
+        TextLabel1.Position = UDim2.new(0, TextLabel.TextBounds.X + 51, 0, 0)
+    end)
     TextLabel1.Parent = Top
 
     Close.Font = Enum.Font.SourceSans
@@ -658,7 +700,7 @@ function PandoruyHub:Window(GuiConfig)
     Close.BorderSizePixel = 0
     Close.Position = UDim2.new(1, -8, 0.5, 0)
     Close.Size = UDim2.new(0, 25, 0, 25)
-    Close.Name = "Close"
+    Close.Name = "CloseButton"
     Close.Parent = Top
 
     ImageLabel1.Image = "rbxassetid://9886659671"
@@ -938,7 +980,7 @@ function PandoruyHub:Window(GuiConfig)
     ScrollTab.ChildRemoved:Connect(UpdateSize1)
 
     function GuiFunc:DestroyGui()
-        if CoreGui:FindFirstChild("Chloeex") then
+        if Chloeex.Parent then
             Chloeex:Destroy()
         end
     end
@@ -1079,8 +1121,8 @@ function PandoruyHub:Window(GuiConfig)
                 pcall(GuiFunc.OnDestroy)
             end
             if Chloeex then Chloeex:Destroy() end
-            if game.CoreGui:FindFirstChild("ToggleUIButton") then
-                game.CoreGui.ToggleUIButton:Destroy()
+            if GuiRoot():FindFirstChild("ToggleUIButton") then
+                GuiRoot().ToggleUIButton:Destroy()
             end
         end)
 
@@ -1091,7 +1133,8 @@ function PandoruyHub:Window(GuiConfig)
 
     function GuiFunc:ToggleUI()
         local ScreenGui = Instance.new("ScreenGui")
-        ScreenGui.Parent = game:GetService("CoreGui")
+        ScreenGui.ResetOnSpawn = false -- under PlayerGui a respawn would take it
+        ScreenGui.Parent = GuiRoot()
         ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         ScreenGui.Name = "ToggleUIButton"
 
@@ -1596,21 +1639,27 @@ function PandoruyHub:Window(GuiConfig)
             local function UpdateSizeScroll()
                 local OffsetY = 0
                 for _, child in ScrolLayers:GetChildren() do
-                    if child.Name ~= "UIListLayout" then
+                    if child.Name ~= "UIListLayout" and (not child:IsA("GuiObject") or child.Visible) then
                         OffsetY = OffsetY + 3 + child.Size.Y.Offset
                     end
                 end
                 ScrolLayers.CanvasSize = UDim2.new(0, 0, 0, OffsetY)
             end
 
+            -- The open height: the header plus every shown item (a hidden item takes no space).
+            local function OpenHeight()
+                local SectionSizeYWitdh = 38
+                for _, v in SectionAdd:GetChildren() do
+                    if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" and (not v:IsA("GuiObject") or v.Visible) then
+                        SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
+                    end
+                end
+                return SectionSizeYWitdh
+            end
+
             local function UpdateSizeSection()
                 if OpenSection then
-                    local SectionSizeYWitdh = 38
-                    for _, v in SectionAdd:GetChildren() do
-                        if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" then
-                            SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
-                        end
-                    end
+                    local SectionSizeYWitdh = OpenHeight()
                     TweenService:Create(FeatureFrame, TweenInfo.new(0.5), { Rotation = 90 }):Play()
                     TweenService:Create(Section, TweenInfo.new(0.5), { Size = UDim2.new(1, 1, 0, SectionSizeYWitdh) })
                         :Play()
@@ -1627,12 +1676,7 @@ function PandoruyHub:Window(GuiConfig)
             -- (UpdateSizeSection) hanya dipakai untuk animasi toggle klik manual.
             local function UpdateSizeSectionInstant()
                 if OpenSection then
-                    local SectionSizeYWitdh = 38
-                    for _, v in SectionAdd:GetChildren() do
-                        if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" then
-                            SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
-                        end
-                    end
+                    local SectionSizeYWitdh = OpenHeight()
                     Section.Size = UDim2.new(1, 1, 0, SectionSizeYWitdh)
                     SectionAdd.Size = UDim2.new(1, 0, 0, SectionSizeYWitdh - 38)
                     SectionDecideFrame.Size = UDim2.new(1, 0, 0, 2)
@@ -1653,32 +1697,42 @@ function PandoruyHub:Window(GuiConfig)
                 OpenSection = false
             end
 
+            local function CollapseSection()
+                TweenService:Create(FeatureFrame, TweenInfo.new(0.5), { Rotation = 0 }):Play()
+                TweenService:Create(Section, TweenInfo.new(0.5), { Size = UDim2.new(1, 1, 0, 30) }):Play()
+                TweenService:Create(SectionDecideFrame, TweenInfo.new(0.5), { Size = UDim2.new(0, 0, 0, 2) })
+                    :Play()
+                OpenSection = false
+                task.wait(0.5)
+                UpdateSizeScroll()
+            end
+
+            local function ExpandSection()
+                OpenSection = true
+                UpdateSizeSection()
+            end
+
+            -- Items:OnToggle(fn): fn(open) after the player opens / closes the section
+            local ToggleListeners = {}
+
             if AlwaysOpen ~= true then
                 SectionButton.Activated:Connect(function()
                     CircleClick(SectionButton, Mouse.X, Mouse.Y)
-                    if OpenSection then
-                        TweenService:Create(FeatureFrame, TweenInfo.new(0.5), { Rotation = 0 }):Play()
-                        TweenService:Create(Section, TweenInfo.new(0.5), { Size = UDim2.new(1, 1, 0, 30) }):Play()
-                        TweenService:Create(SectionDecideFrame, TweenInfo.new(0.5), { Size = UDim2.new(0, 0, 0, 2) })
-                            :Play()
-                        OpenSection = false
-                        task.wait(0.5)
-                        UpdateSizeScroll()
+                    local opening = not OpenSection
+                    for _, fn in ipairs(ToggleListeners) do
+                        task.spawn(fn, opening)
+                    end
+                    if opening then
+                        ExpandSection()
                     else
-                        OpenSection = true
-                        UpdateSizeSection()
+                        CollapseSection()
                     end
                 end)
             end
 
             if AlwaysOpen == true or AlwaysOpen == false then
                 OpenSection = true
-                local SectionSizeYWitdh = 38
-                for _, v in SectionAdd:GetChildren() do
-                    if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" then
-                        SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
-                    end
-                end
+                local SectionSizeYWitdh = OpenHeight()
                 FeatureFrame.Rotation = 90
                 Section.Size = UDim2.new(1, 1, 0, SectionSizeYWitdh)
                 SectionAdd.Size = UDim2.new(1, 0, 0, SectionSizeYWitdh - 38)
@@ -1686,8 +1740,15 @@ function PandoruyHub:Window(GuiConfig)
                 UpdateSizeScroll()
             end
 
-            SectionAdd.ChildAdded:Connect(UpdateSizeSectionInstant)
+            SectionAdd.ChildAdded:Connect(function(child)
+                if child:IsA("GuiObject") then
+                    child:GetPropertyChangedSignal("Visible"):Connect(UpdateSizeSectionInstant)
+                    child:GetPropertyChangedSignal("Size"):Connect(UpdateSizeSectionInstant)
+                end
+                UpdateSizeSectionInstant()
+            end)
             SectionAdd.ChildRemoved:Connect(UpdateSizeSectionInstant)
+            Section:GetPropertyChangedSignal("Visible"):Connect(UpdateSizeScroll)
 
             local layout = ScrolLayers:FindFirstChildOfClass("UIListLayout")
             if layout then
@@ -1698,6 +1759,15 @@ function PandoruyHub:Window(GuiConfig)
 
             local Items = {}
             local CountItem = 0
+
+            -- Every control handle carries its row: Frame, and SetVisible(b) (a hidden row takes no space).
+            local function Handle(func, frame)
+                func.Frame = frame
+                function func:SetVisible(v)
+                    frame.Visible = (v ~= false)
+                end
+                return func
+            end
 
             function Items:AddParagraph(ParagraphConfig)
                 local ParagraphConfig = ParagraphConfig or {}
@@ -1739,7 +1809,12 @@ function PandoruyHub:Window(GuiConfig)
                     iconOffset = 30
                 end
 
+                -- Title = "": no title line, the content starts at the top
+                local hasTitle = ParagraphConfig.Title ~= ""
+                local contentY = hasTitle and 25 or 10
+
                 ParagraphTitle.Font = Enum.Font.GothamBold
+                ParagraphTitle.Visible = hasTitle
                 ParagraphTitle.Text = ParagraphConfig.Title
                 ParagraphTitle.TextColor3 = Color3.fromRGB(231, 231, 231)
                 ParagraphTitle.TextSize = 13
@@ -1758,7 +1833,7 @@ function PandoruyHub:Window(GuiConfig)
                 ParagraphContent.TextXAlignment = Enum.TextXAlignment.Left
                 ParagraphContent.TextYAlignment = Enum.TextYAlignment.Top
                 ParagraphContent.BackgroundTransparency = 1
-                ParagraphContent.Position = UDim2.new(0, iconOffset, 0, 25)
+                ParagraphContent.Position = UDim2.new(0, iconOffset, 0, contentY)
                 ParagraphContent.Name = "ParagraphContent"
                 ParagraphContent.TextWrapped = true
                 ParagraphContent.RichText = true
@@ -1790,7 +1865,7 @@ function PandoruyHub:Window(GuiConfig)
                 end
 
                 local function UpdateSize()
-                    local totalHeight = ParagraphContent.TextBounds.Y + 33
+                    local totalHeight = ParagraphContent.TextBounds.Y + contentY + 8
                     if ParagraphButton then
                         totalHeight = totalHeight + ParagraphButton.Size.Y.Offset + 5
                     end
@@ -1807,8 +1882,12 @@ function PandoruyHub:Window(GuiConfig)
                     UpdateSize()
                 end
 
+                function ParagraphFunc:SetTitle(title)
+                    ParagraphTitle.Text = tostring(title or "")
+                end
+
                 CountItem = CountItem + 1
-                return ParagraphFunc
+                return Handle(ParagraphFunc, Paragraph)
             end
 
             function Items:AddPanel(PanelConfig)
@@ -1957,8 +2036,7 @@ function PandoruyHub:Window(GuiConfig)
                 if InputBox then
                     InputBox.FocusLost:Connect(function()
                         PanelFunc.Value = InputBox.Text
-                        ConfigData[configKey] = InputBox.Text
-                        SaveConfig()
+                        Remember(configKey, InputBox.Text)
                     end)
                 end
 
@@ -2006,8 +2084,9 @@ function PandoruyHub:Window(GuiConfig)
 
                 MainButton.MouseButton1Click:Connect(ButtonConfig.Callback)
 
+                local SubButton
                 if ButtonConfig.SubTitle then
-                    local SubButton = Instance.new("TextButton")
+                    SubButton = Instance.new("TextButton")
                     SubButton.Font = Enum.Font.GothamBold
                     SubButton.Text = ButtonConfig.SubTitle
                     SubButton.TextSize = 12
@@ -2026,7 +2105,11 @@ function PandoruyHub:Window(GuiConfig)
                     SubButton.MouseButton1Click:Connect(ButtonConfig.SubCallback)
                 end
 
+                local ButtonFunc = { Button = MainButton, SubButton = SubButton }
+                function ButtonFunc:SetText(t) MainButton.Text = tostring(t or "") end
+
                 CountItem = CountItem + 1
+                return Handle(ButtonFunc, Button)
             end
 
             function Items:AddToggle(ToggleConfig)
@@ -2180,8 +2263,7 @@ function PandoruyHub:Window(GuiConfig)
                         if not ok then warn("Toggle Callback error:", err) end
                     end
                     if not silent then
-                        ConfigData[configKey] = Value
-                        SaveConfig()
+                        Remember(configKey, Value)
                     end
                     if Value then
                         TweenService:Create(ToggleTitle, TweenInfo.new(0.2), { TextColor3 = GuiConfig.Color }):Play()
@@ -2202,10 +2284,10 @@ function PandoruyHub:Window(GuiConfig)
                     end
                 end
 
-                ToggleFunc:Set(ToggleFunc.Value)
+                ToggleFunc:Set(ToggleFunc.Value, not ConfigEnabled)
                 CountItem = CountItem + 1
                 Elements[configKey] = ToggleFunc
-                return ToggleFunc
+                return Handle(ToggleFunc, Toggle)
             end
 
             function Items:AddSlider(SliderConfig)
@@ -2370,7 +2452,7 @@ function PandoruyHub:Window(GuiConfig)
                     end
                     return Result
                 end
-                function SliderFunc:Set(Value)
+                function SliderFunc:Set(Value, silent)
                     Value = math.clamp(Round(Value, SliderConfig.Increment), SliderConfig.Min, SliderConfig.Max)
                     SliderFunc.Value = Value
                     TextBox.Text = tostring(Value)
@@ -2380,9 +2462,9 @@ function PandoruyHub:Window(GuiConfig)
                         { Size = UDim2.fromScale((Value - SliderConfig.Min) / (SliderConfig.Max - SliderConfig.Min), 1) }
                     ):Play()
 
+                    if silent then return end
                     SliderConfig.Callback(Value)
-                    ConfigData[configKey] = Value
-                    SaveConfig()
+                    Remember(configKey, Value)
                 end
 
                 SliderFrame.InputBegan:Connect(function(Input)
@@ -2427,17 +2509,20 @@ function PandoruyHub:Window(GuiConfig)
 
                 TextBox:GetPropertyChangedSignal("Text"):Connect(function()
                     local Valid = TextBox.Text:gsub("[^%d]", "")
-                    if Valid ~= "" then
-                        local ValidNumber = math.clamp(tonumber(Valid), SliderConfig.Min, SliderConfig.Max)
+                    local ValidNumber = Valid ~= "" and math.clamp(tonumber(Valid), SliderConfig.Min, SliderConfig.Max)
+                        or SliderConfig.Min
+                    -- Set() writing the box is not a new value (it would run the callback twice);
+                    -- a typed value clamped to the current one still shows the current one
+                    if ValidNumber ~= SliderFunc.Value then
                         SliderFunc:Set(ValidNumber)
-                    else
-                        SliderFunc:Set(SliderConfig.Min)
+                    elseif TextBox.Text ~= tostring(SliderFunc.Value) then
+                        TextBox.Text = tostring(SliderFunc.Value)
                     end
                 end)
-                SliderFunc:Set(SliderConfig.Default)
+                SliderFunc:Set(SliderConfig.Default, not ConfigEnabled)
                 CountItem = CountItem + 1
                 Elements[configKey] = SliderFunc
-                return SliderFunc
+                return Handle(SliderFunc, Slider)
             end
 
             function Items:AddInput(InputConfig)
@@ -2538,7 +2623,10 @@ function PandoruyHub:Window(GuiConfig)
                 InputTextBox.Font = Enum.Font.GothamBold
                 InputTextBox.PlaceholderColor3 = Color3.fromRGB(120.00000044703484, 120.00000044703484,
                     120.00000044703484)
-                InputTextBox.PlaceholderText = "Input Here"
+                InputTextBox.PlaceholderText = InputConfig.Placeholder or "Input Here"
+                -- ClearTextOnFocus = false: focusing the box keeps its text (Roblox clears it by
+                -- default); a Password box never clears (focusing shows the real text to edit)
+                InputTextBox.ClearTextOnFocus = InputConfig.ClearTextOnFocus ~= false and not InputConfig.Password
                 InputTextBox.Text = InputConfig.Default
                 InputTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
                 InputTextBox.TextSize = 12
@@ -2552,22 +2640,35 @@ function PandoruyHub:Window(GuiConfig)
                 InputTextBox.Size = UDim2.new(1, -10, 1, -8)
                 InputTextBox.Name = "InputTextBox"
                 InputTextBox.Parent = InputFrame
-                function InputFunc:Set(Value)
-                    InputTextBox.Text = Value
-                    InputFunc.Value = Value
-                    InputConfig.Callback(Value)
-                    ConfigData[configKey] = Value
-                    SaveConfig()
+                -- Password = true: the box shows dots unless it is being typed in; Value is the real text
+                local function Shown(Value)
+                    if InputConfig.Password and not InputTextBox:IsFocused() then
+                        return string.rep("•", utf8.len(tostring(Value)) or #tostring(Value))
+                    end
+                    return Value
                 end
 
-                InputFunc:Set(InputFunc.Value)
+                function InputFunc:Set(Value, silent)
+                    InputFunc.Value = Value
+                    InputTextBox.Text = Shown(Value)
+                    if silent then return end
+                    InputConfig.Callback(Value)
+                    Remember(configKey, Value)
+                end
 
+                InputFunc:Set(InputFunc.Value, not ConfigEnabled)
+
+                if InputConfig.Password then
+                    InputTextBox.Focused:Connect(function()
+                        InputTextBox.Text = tostring(InputFunc.Value or "")
+                    end)
+                end
                 InputTextBox.FocusLost:Connect(function()
                     InputFunc:Set(InputTextBox.Text)
                 end)
                 CountItem = CountItem + 1
                 Elements[configKey] = InputFunc
-                return InputFunc
+                return Handle(InputFunc, Input)
             end
 
             function Items:AddDropdown(DropdownConfig)
@@ -2655,7 +2756,8 @@ function PandoruyHub:Window(GuiConfig)
                         -- _openRefresh juga menjalankan OnOpen (auto-refresh) bila ada.
                         DropdownFunc:_openRefresh()
                         MoreBlur.Visible = true
-                        DropPageLayout:JumpToIndex(SelectOptionsFrame.LayoutOrder)
+                        -- the list page by instance: a removed dropdown's page is gone, so indexes shift
+                        DropPageLayout:JumpTo(DropdownFunc._container)
                         TweenService:Create(MoreBlur, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
                         TweenService:Create(DropdownSelect, TweenInfo.new(0.3), { Position = UDim2.new(1, -11, 0.5, 0) })
                             :Play()
@@ -2688,7 +2790,13 @@ function PandoruyHub:Window(GuiConfig)
                 local DropdownContainer = Instance.new("Frame")
                 DropdownContainer.Size = UDim2.new(1, 0, 1, 0)
                 DropdownContainer.BackgroundTransparency = 1
+                DropdownContainer.LayoutOrder = CountDropdown
                 DropdownContainer.Parent = DropdownFolder
+                DropdownFunc._container = DropdownContainer
+                -- a dropdown taken away (Clear / ClearFrom / Destroy) takes its list page with it
+                Dropdown.Destroying:Connect(function()
+                    pcall(function() DropdownContainer:Destroy() end)
+                end)
 
                 local SearchBox = Instance.new("TextBox")
                 SearchBox.PlaceholderText = "Search"
@@ -2725,7 +2833,7 @@ function PandoruyHub:Window(GuiConfig)
                     ScrollSelect.CanvasSize = UDim2.new(0, 0, 0, UIListLayout4.AbsoluteContentSize.Y)
                 end)
 
-                SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                local function ApplySearch()
                     local query = string.lower(SearchBox.Text)
                     for _, option in pairs(ScrollSelect:GetChildren()) do
                         if option.Name == "Option" and option:FindFirstChild("OptionText") then
@@ -2734,7 +2842,8 @@ function PandoruyHub:Window(GuiConfig)
                         end
                     end
                     ScrollSelect.CanvasSize = UDim2.new(0, 0, 0, UIListLayout4.AbsoluteContentSize.Y)
-                end)
+                end
+                SearchBox:GetPropertyChangedSignal("Text"):Connect(ApplySearch)
 
                 local DropCount = 0
 
@@ -2839,8 +2948,7 @@ function PandoruyHub:Window(GuiConfig)
                     end
 
                     if not silent then
-                        ConfigData[configKey] = DropdownFunc.Value
-                        SaveConfig()
+                        Remember(configKey, DropdownFunc.Value)
                     end
 
                     local texts = {}
@@ -2945,14 +3053,14 @@ function PandoruyHub:Window(GuiConfig)
                 -- Dipanggil saat dropdown dibuka: jalankan OnOpen (auto-refresh) bila ada,
                 -- lalu bangun frame opsi bila belum dirender (atau selalu rebuild untuk OnOpen).
                 function DropdownFunc:_openRefresh()
-                    local list = DropdownFunc.Options
                     if DropdownConfig.OnOpen and typeof(DropdownConfig.OnOpen) == "function" then
                         local ok, newItems = pcall(DropdownConfig.OnOpen)
                         if ok and type(newItems) == "table" then
                             DropdownFunc.Options = newItems
-                            list = newItems
                         end
                     end
+                    -- read after OnOpen: it may have set the list itself (SetOptions)
+                    local list = DropdownFunc.Options
                     if (not DropdownFunc._rendered) or DropdownConfig.OnOpen then
                         DropdownFunc:_buildFrames(list)
                         DropdownFunc:Set(DropdownFunc.Value, true)  -- silent: repaint only
@@ -2976,12 +3084,24 @@ function PandoruyHub:Window(GuiConfig)
 
                 -- Init: TIDAK bangun frame opsi (hemat load). Cukup set teks terpilih +
                 -- fire callback dari nilai config/Default.
-                DropdownFunc:Set(DropdownFunc.Value)
+                -- A new option list: the pick stays (even one missing from the list) and nothing is
+                -- called or saved; an open list redraws in place, the search query still applied.
+                function DropdownFunc:SetOptions(newList)
+                    DropdownFunc.Options = newList or {}
+                    if DropdownFunc._rendered then
+                        DropdownFunc:_buildFrames(DropdownFunc.Options)
+                        DropdownFunc:_reorderSelectedTop()
+                        ApplySearch()
+                    end
+                    DropdownFunc:Set(DropdownFunc.Value, true)
+                end
+
+                DropdownFunc:Set(DropdownFunc.Value, not ConfigEnabled)
 
                 CountItem = CountItem + 1
                 CountDropdown = CountDropdown + 1
                 Elements[configKey] = DropdownFunc
-                return DropdownFunc
+                return Handle(DropdownFunc, Dropdown)
             end
 
             function Items:AddDivider()
@@ -3118,6 +3238,199 @@ function PandoruyHub:Window(GuiConfig)
                 return RowFunc
             end
 
+            -- AddTable(cfg) — ADDITIVE: a small table, one row per entry, with cells the player can
+            -- edit in place. cfg: Title (optional line above the header), Columns ({ Text, Width
+            -- (flex weight, default 1), Editable, Placeholder } or header strings), Rows ({ cells }
+            -- or { Key = k, Cells = { ... } }), OnEdit(rowKey, col, text, oldText): return false
+            -- to put the old text back, a string / number to show that instead, nil to keep the
+            -- typed text. The table grows with its rows. Returns { SetData, AddRow, SetCell,
+            -- GetCell, Clear, Frame, SetVisible }.
+            function Items:AddTable(cfg)
+                cfg = cfg or {}
+                local ROW_H, HEADER_H, PAD = 26, 22, 6
+                local columns = {}
+                local totalWeight = 0
+                for i, col in ipairs(cfg.Columns or {}) do
+                    if type(col) ~= "table" then col = { Text = tostring(col) } end
+                    columns[i] = col
+                    totalWeight = totalWeight + (tonumber(col.Width) or 1)
+                end
+                if totalWeight <= 0 then totalWeight = 1 end
+
+                local Table = Instance.new("Frame")
+                Table.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                Table.BackgroundTransparency = 0.935
+                Table.BorderSizePixel = 0
+                Table.LayoutOrder = CountItem
+                Table.Name = "Table"
+                Table.Parent = SectionAdd
+                Instance.new("UICorner", Table).CornerRadius = UDim.new(0, 4)
+
+                local top = PAD
+                if cfg.Title and cfg.Title ~= "" then
+                    local TitleLabel = Instance.new("TextLabel")
+                    TitleLabel.BackgroundTransparency = 1
+                    TitleLabel.Position = UDim2.new(0, 10, 0, 8)
+                    TitleLabel.Size = UDim2.new(1, -20, 0, 13)
+                    TitleLabel.Font = Enum.Font.GothamBold
+                    TitleLabel.Text = tostring(cfg.Title)
+                    TitleLabel.TextColor3 = Color3.fromRGB(231, 231, 231)
+                    TitleLabel.TextSize = 13
+                    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    TitleLabel.Parent = Table
+                    top = 26
+                end
+
+                -- column i spans its share of the width (10 px margins, 4 px between cells)
+                local function place(cell, i)
+                    local before = 0
+                    for k = 1, i - 1 do before = before + (tonumber(columns[k].Width) or 1) end
+                    local w = tonumber(columns[i].Width) or 1
+                    cell.Position = UDim2.new(before / totalWeight, (i == 1) and 10 or 2, 0, 0)
+                    cell.Size = UDim2.new(w / totalWeight, ((i == 1) and -12 or -4) - ((i == #columns) and 8 or 0), 1, 0)
+                end
+
+                local Header = Instance.new("Frame")
+                Header.BackgroundTransparency = 1
+                Header.Position = UDim2.new(0, 0, 0, top)
+                Header.Size = UDim2.new(1, 0, 0, HEADER_H)
+                Header.Name = "Header"
+                Header.Parent = Table
+                for i, col in ipairs(columns) do
+                    local h = Instance.new("TextLabel")
+                    h.BackgroundTransparency = 1
+                    h.Font = Enum.Font.GothamBold
+                    h.Text = tostring(col.Text or "")
+                    h.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    h.TextTransparency = 0.4
+                    h.TextSize = 11
+                    h.TextXAlignment = Enum.TextXAlignment.Left
+                    h.TextTruncate = Enum.TextTruncate.AtEnd
+                    h.Parent = Header
+                    place(h, i)
+                end
+
+                local Body = Instance.new("Frame")
+                Body.BackgroundTransparency = 1
+                Body.Position = UDim2.new(0, 0, 0, top + HEADER_H)
+                Body.Name = "Body"
+                Body.Parent = Table
+                local BodyLayout = Instance.new("UIListLayout")
+                BodyLayout.Padding = UDim.new(0, 2)
+                BodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                BodyLayout.Parent = Body
+
+                local rows = {}   -- key -> { frame, cells = { text } , boxes = { gui } }
+                local order = 0
+
+                local function resize()
+                    local n = 0
+                    for _ in pairs(rows) do n = n + 1 end
+                    local bodyH = n * (ROW_H + 2)
+                    Body.Size = UDim2.new(1, 0, 0, bodyH)
+                    Table.Size = UDim2.new(1, 0, 0, top + HEADER_H + bodyH + PAD)
+                end
+
+                local TableFunc = {}
+
+                function TableFunc:AddRow(cells, key)
+                    if type(cells) == "table" and cells.Cells then
+                        key = cells.Key
+                        cells = cells.Cells
+                    end
+                    order = order + 1
+                    key = key ~= nil and key or order
+                    local Row = Instance.new("Frame")
+                    Row.BackgroundTransparency = 1
+                    Row.Size = UDim2.new(1, 0, 0, ROW_H)
+                    Row.LayoutOrder = order
+                    Row.Name = "Row"
+                    Row.Parent = Body
+                    local entry = { frame = Row, cells = {}, boxes = {} }
+                    for i, col in ipairs(columns) do
+                        local text = tostring((cells or {})[i] or "")
+                        entry.cells[i] = text
+                        local cell
+                        if col.Editable then
+                            cell = Instance.new("TextBox")
+                            cell.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                            cell.BackgroundTransparency = 0.95
+                            cell.ClearTextOnFocus = false
+                            cell.PlaceholderText = tostring(col.Placeholder or "")
+                            cell.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+                            Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 4)
+                            local cellPad = Instance.new("UIPadding", cell)
+                            cellPad.PaddingLeft = UDim.new(0, 6)
+                            cell.FocusLost:Connect(function()
+                                local old = entry.cells[i]
+                                local typed = cell.Text
+                                local shown = typed
+                                if cfg.OnEdit then
+                                    local ok, res = pcall(cfg.OnEdit, key, i, typed, old)
+                                    if not ok then
+                                        warn("Table OnEdit error:", res)
+                                        shown = old
+                                    elseif res == false then
+                                        shown = old
+                                    elseif type(res) == "string" or type(res) == "number" then
+                                        shown = tostring(res)
+                                    end
+                                end
+                                entry.cells[i] = shown
+                                cell.Text = shown
+                            end)
+                        else
+                            cell = Instance.new("TextLabel")
+                            cell.BackgroundTransparency = 1
+                            cell.TextTruncate = Enum.TextTruncate.AtEnd
+                        end
+                        cell.Font = Enum.Font.GothamBold
+                        cell.Text = text
+                        cell.TextColor3 = Color3.fromRGB(230, 230, 230)
+                        cell.TextSize = 12
+                        cell.TextXAlignment = Enum.TextXAlignment.Left
+                        cell.Parent = Row
+                        place(cell, i)
+                        cell.Size = UDim2.new(cell.Size.X.Scale, cell.Size.X.Offset, 1, -4)
+                        cell.Position = UDim2.new(cell.Position.X.Scale, cell.Position.X.Offset, 0, 2)
+                        entry.boxes[i] = cell
+                    end
+                    if rows[key] then pcall(function() rows[key].frame:Destroy() end) end
+                    rows[key] = entry
+                    resize()
+                    return Row
+                end
+
+                function TableFunc:Clear()
+                    for _, entry in pairs(rows) do pcall(function() entry.frame:Destroy() end) end
+                    rows = {}
+                    order = 0
+                    resize()
+                end
+
+                function TableFunc:SetData(list)
+                    TableFunc:Clear()
+                    for _, row in ipairs(list or {}) do TableFunc:AddRow(row) end
+                end
+
+                function TableFunc:SetCell(key, col, text)
+                    local entry = rows[key]
+                    if not entry or not entry.boxes[col] then return false end
+                    entry.cells[col] = tostring(text or "")
+                    entry.boxes[col].Text = entry.cells[col]
+                    return true
+                end
+
+                function TableFunc:GetCell(key, col)
+                    local entry = rows[key]
+                    return entry and entry.cells[col] or nil
+                end
+
+                TableFunc:SetData(cfg.Rows)
+                CountItem = CountItem + 1
+                return Handle(TableFunc, Table)
+            end
+
             -- Clear() — ADDITIVE (backward-compat): hapus semua item di section, buat pola
             -- dynamic "clear + rebuild" (mis. daftar rule yang bisa add/hapus). ChildRemoved
             -- udah nge-trigger auto-resize, jadi section otomatis nyusut. Method baru; project
@@ -3170,6 +3483,27 @@ function PandoruyHub:Window(GuiConfig)
             function Items:SetTitle(t) pcall(function() SectionTitle.Text = tostring(t) end) end
             function Items:SetVisible(v) pcall(function() Section.Visible = (v ~= false) end) end
             Items.__section = Section
+            -- open / close from code (the header click does the same), and the header button itself
+            -- (Header is nil on an AlwaysOpen section)
+            -- (no tween, no wait: the caller goes on at once)
+            function Items:IsExpanded() return OpenSection end
+            function Items:Expand()
+                if OpenSection then return end
+                OpenSection = true
+                UpdateSizeSectionInstant()
+            end
+            function Items:Collapse()
+                if not OpenSection or AlwaysOpen == true then return end
+                OpenSection = false
+                FeatureFrame.Rotation = 0
+                Section.Size = UDim2.new(1, 1, 0, 30)
+                SectionDecideFrame.Size = UDim2.new(0, 0, 0, 2)
+                UpdateSizeScroll()
+            end
+            Items.Header = (AlwaysOpen ~= true) and SectionButton or nil
+            function Items:OnToggle(fn)
+                if type(fn) == "function" then table.insert(ToggleListeners, fn) end
+            end
 
             CountSection = CountSection + 1
             return Items

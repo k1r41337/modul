@@ -2,13 +2,20 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local username = Players.LocalPlayer and Players.LocalPlayer.Name or "Unknown"
 
--- GetProductInfo is a web call: when it fails the lib still loads (the name only names the config file)
-local okName, productName = pcall(function()
-    return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
-end)
-local gameName   = okName and tostring(productName) or tostring(game.PlaceId)
-gameName         = gameName:gsub("[^%w_ ]", "")
-gameName         = gameName:gsub("%s+", "_")
+-- GetProductInfo is a web call: when it fails the lib still loads (the name only names the config file).
+-- Resolved lazily on first use so loading the lib never waits on the network.
+local gameNameCache
+local function getGameName()
+    if gameNameCache then return gameNameCache end
+    local okName, productName = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+    end)
+    local gameName = okName and tostring(productName) or tostring(game.PlaceId)
+    gameName       = gameName:gsub("[^%w_ ]", "")
+    gameName       = gameName:gsub("%s+", "_")
+    gameNameCache  = gameName
+    return gameName
+end
 
 -- Config folder (set via Window ConfigFolder parameter, default "PandoruyHub")
 local ConfigBase = nil
@@ -348,7 +355,7 @@ function PandoruyHub:MakeNotify(NotifyConfig)
             local Count = 0
             NotifyRoot.NotifyGui.NotifyLayout.ChildRemoved:Connect(function()
                 Count = 0
-                for i, v in NotifyRoot.NotifyGui.NotifyLayout:GetChildren() do
+                for i, v in ipairs(NotifyRoot.NotifyGui.NotifyLayout:GetChildren()) do
                     TweenService:Create(
                         v,
                         TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
@@ -359,7 +366,7 @@ function PandoruyHub:MakeNotify(NotifyConfig)
             end)
         end
         local NotifyPosHeigh = 0
-        for i, v in NotifyRoot.NotifyGui.NotifyLayout:GetChildren() do
+        for i, v in ipairs(NotifyRoot.NotifyGui.NotifyLayout:GetChildren()) do
             NotifyPosHeigh = -(v.Position.Y.Offset) + v.Size.Y.Offset + 12
         end
         local NotifyFrame = Instance.new("Frame");
@@ -544,7 +551,7 @@ function PandoruyHub:Window(GuiConfig)
     if ConfigEnabled then
         -- Config folder per-game (e.g. "PandoruyHub/GAG", "PandoruyHub/KG")
         ConfigBase = GuiConfig.ConfigFolder or "PandoruyHub"
-        ConfigFile = ConfigBase .. "/" .. username .. "/Config/PDH_" .. gameName .. ".json"
+        ConfigFile = ConfigBase .. "/" .. username .. "/Config/PDH_" .. getGameName() .. ".json"
         EnsureConfigFolders(ConfigBase)
 
         CURRENT_VERSION        = GuiConfig.Version
@@ -969,7 +976,7 @@ function PandoruyHub:Window(GuiConfig)
 
     local function UpdateSize1()
         local OffsetY = 0
-        for _, child in ScrollTab:GetChildren() do
+        for _, child in ipairs(ScrollTab:GetChildren()) do
             if child.Name ~= "UIListLayout" then
                 OffsetY = OffsetY + 3 + child.Size.Y.Offset
             end
@@ -1439,8 +1446,8 @@ function PandoruyHub:Window(GuiConfig)
         TabButton.Activated:Connect(function()
             CircleClick(TabButton, Mouse.X, Mouse.Y)
             local FrameChoose
-            for a, s in ScrollTab:GetChildren() do
-                for i, v in s:GetChildren() do
+            for a, s in ipairs(ScrollTab:GetChildren()) do
+                for i, v in ipairs(s:GetChildren()) do
                     if v.Name == "ChooseFrame" then
                         FrameChoose = v
                         break
@@ -1448,7 +1455,7 @@ function PandoruyHub:Window(GuiConfig)
                 end
             end
             if FrameChoose ~= nil and Tab.LayoutOrder ~= LayersPageLayout.CurrentPage.LayoutOrder then
-                for _, TabFrame in ScrollTab:GetChildren() do
+                for _, TabFrame in ipairs(ScrollTab:GetChildren()) do
                     if TabFrame.Name == "Tab" then
                         TweenService:Create(
                             TabFrame,
@@ -1637,7 +1644,7 @@ function PandoruyHub:Window(GuiConfig)
 
             local function UpdateSizeScroll()
                 local OffsetY = 0
-                for _, child in ScrolLayers:GetChildren() do
+                for _, child in ipairs(ScrolLayers:GetChildren()) do
                     if child.Name ~= "UIListLayout" and (not child:IsA("GuiObject") or child.Visible) then
                         OffsetY = OffsetY + 3 + child.Size.Y.Offset
                     end
@@ -1648,7 +1655,7 @@ function PandoruyHub:Window(GuiConfig)
             -- The open height: the header plus every shown item (a hidden item takes no space).
             local function OpenHeight()
                 local SectionSizeYWitdh = 38
-                for _, v in SectionAdd:GetChildren() do
+                for _, v in ipairs(SectionAdd:GetChildren()) do
                     if v.Name ~= "UIListLayout" and v.Name ~= "UICorner" and (not v:IsA("GuiObject") or v.Visible) then
                         SectionSizeYWitdh = SectionSizeYWitdh + v.Size.Y.Offset + 3
                     end
@@ -2199,13 +2206,20 @@ function PandoruyHub:Window(GuiConfig)
                     ToggleTitle2.Visible = false
                 end
 
-                ToggleContent.Size = UDim2.new(1, -100, 0,
-                    12 + (12 * (ToggleContent.TextBounds.X // ToggleContent.AbsoluteSize.X)))
-                ToggleContent.TextWrapped = true
-                if ToggleConfig.Title2 ~= "" then
-                    Toggle.Size = UDim2.new(1, 0, 0, ToggleContent.AbsoluteSize.Y + 47)
+                if ToggleConfig.Content == "" then
+                    -- no text: same result as below without forcing three layout passes
+                    ToggleContent.Size = UDim2.new(1, -100, 0, 12)
+                    ToggleContent.TextWrapped = true
+                    Toggle.Size = UDim2.new(1, 0, 0, 12 + (ToggleConfig.Title2 ~= "" and 47 or 33))
                 else
-                    Toggle.Size = UDim2.new(1, 0, 0, ToggleContent.AbsoluteSize.Y + 33)
+                    ToggleContent.Size = UDim2.new(1, -100, 0,
+                        12 + (12 * (ToggleContent.TextBounds.X // ToggleContent.AbsoluteSize.X)))
+                    ToggleContent.TextWrapped = true
+                    if ToggleConfig.Title2 ~= "" then
+                        Toggle.Size = UDim2.new(1, 0, 0, ToggleContent.AbsoluteSize.Y + 47)
+                    else
+                        Toggle.Size = UDim2.new(1, 0, 0, ToggleContent.AbsoluteSize.Y + 33)
+                    end
                 end
 
                 ToggleContent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -2257,7 +2271,7 @@ function PandoruyHub:Window(GuiConfig)
                     ToggleFunc:Set(ToggleFunc.Value)
                 end)
 
-                function ToggleFunc:Set(Value, silent)
+                function ToggleFunc:Set(Value, silent, instant)
                     ToggleFunc.Value = Value   -- keep state in sync (a direct Set() otherwise
                                                -- left .Value stale -> next click needed twice)
                     if not silent and typeof(ToggleConfig.Callback) == "function" then
@@ -2269,7 +2283,20 @@ function PandoruyHub:Window(GuiConfig)
                     if not silent then
                         Remember(configKey, Value)
                     end
-                    if Value then
+                    if instant then
+                        -- creation: same end state as the tweens below, without 4 tweens per toggle
+                        if Value then
+                            ToggleTitle.TextColor3 = GuiConfig.Color
+                            ToggleCircle.Position = UDim2.new(0, 15, 0, 0)
+                            UIStroke8.Color = GuiConfig.Color; UIStroke8.Transparency = 0
+                            FeatureFrame2.BackgroundColor3 = GuiConfig.Color; FeatureFrame2.BackgroundTransparency = 0
+                        else
+                            ToggleTitle.TextColor3 = Color3.fromRGB(230, 230, 230)
+                            ToggleCircle.Position = UDim2.new(0, 0, 0, 0)
+                            UIStroke8.Color = Color3.fromRGB(255, 255, 255); UIStroke8.Transparency = 0.9
+                            FeatureFrame2.BackgroundColor3 = Color3.fromRGB(255, 255, 255); FeatureFrame2.BackgroundTransparency = 0.92
+                        end
+                    elseif Value then
                         TweenService:Create(ToggleTitle, TweenInfo.new(0.2), { TextColor3 = GuiConfig.Color }):Play()
                         TweenService:Create(ToggleCircle, TweenInfo.new(0.2), { Position = UDim2.new(0, 15, 0, 0) })
                             :Play()
@@ -2288,7 +2315,7 @@ function PandoruyHub:Window(GuiConfig)
                     end
                 end
 
-                ToggleFunc:Set(ToggleFunc.Value, not ConfigEnabled)
+                ToggleFunc:Set(ToggleFunc.Value, not ConfigEnabled, true)
                 CountItem = CountItem + 1
                 Elements[configKey] = ToggleFunc
                 return Handle(ToggleFunc, Toggle)
@@ -2371,10 +2398,16 @@ function PandoruyHub:Window(GuiConfig)
                 SliderContent.Name = "SliderContent"
                 SliderContent.Parent = Slider
 
-                SliderContent.Size = UDim2.new(1, -180, 0,
-                    12 + (12 * (SliderContent.TextBounds.X // SliderContent.AbsoluteSize.X)))
-                SliderContent.TextWrapped = true
-                Slider.Size = UDim2.new(1, 0, 0, SliderContent.AbsoluteSize.Y + 33)
+                if SliderConfig.Content == "" then
+                    SliderContent.Size = UDim2.new(1, -180, 0, 12)
+                    SliderContent.TextWrapped = true
+                    Slider.Size = UDim2.new(1, 0, 0, 12 + 33)
+                else
+                    SliderContent.Size = UDim2.new(1, -180, 0,
+                        12 + (12 * (SliderContent.TextBounds.X // SliderContent.AbsoluteSize.X)))
+                    SliderContent.TextWrapped = true
+                    Slider.Size = UDim2.new(1, 0, 0, SliderContent.AbsoluteSize.Y + 33)
+                end
 
                 SliderContent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                     SliderContent.TextWrapped = false
@@ -2604,10 +2637,16 @@ function PandoruyHub:Window(GuiConfig)
                 InputContent.Name = "InputContent"
                 InputContent.Parent = Input
 
-                InputContent.Size = UDim2.new(1, -180, 0,
-                    12 + (12 * (InputContent.TextBounds.X // InputContent.AbsoluteSize.X)))
-                InputContent.TextWrapped = true
-                Input.Size = UDim2.new(1, 0, 0, InputContent.AbsoluteSize.Y + 33)
+                if InputContent.Text == "" then
+                    InputContent.Size = UDim2.new(1, -180, 0, 12)
+                    InputContent.TextWrapped = true
+                    Input.Size = UDim2.new(1, 0, 0, 12 + 33)
+                else
+                    InputContent.Size = UDim2.new(1, -180, 0,
+                        12 + (12 * (InputContent.TextBounds.X // InputContent.AbsoluteSize.X)))
+                    InputContent.TextWrapped = true
+                    Input.Size = UDim2.new(1, 0, 0, InputContent.AbsoluteSize.Y + 33)
+                end
 
                 InputContent:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                     InputContent.TextWrapped = false
@@ -2875,7 +2914,7 @@ function PandoruyHub:Window(GuiConfig)
                 local DropCount = 0
 
                 function DropdownFunc:Clear()
-                    for _, DropFrame in ScrollSelect:GetChildren() do
+                    for _, DropFrame in ipairs(ScrollSelect:GetChildren()) do
                         if DropFrame.Name == "Option" then
                             DropFrame:Destroy()
                         end
@@ -2980,26 +3019,32 @@ function PandoruyHub:Window(GuiConfig)
 
                     local texts = {}
                     local hasFrames = false
-                    for _, Drop in ScrollSelect:GetChildren() do
+                    for _, Drop in ipairs(ScrollSelect:GetChildren()) do
                         if Drop.Name == "Option" and Drop:FindFirstChild("OptionText") then
                             hasFrames = true
                             local v = Drop:GetAttribute("RealValue")
                             local selected = DropdownConfig.Multi and table.find(DropdownFunc.Value, v) or
                                 DropdownFunc.Value == v
+                            selected = selected and true or false
+                            local painted = Drop:GetAttribute("Painted") -- nil on a fresh frame
 
                             if selected then
-                                TweenService:Create(Drop.ChooseFrame, TweenInfo.new(0.2),
-                                    { Size = UDim2.new(0, 1, 0, 12) }):Play()
-                                TweenService:Create(Drop.ChooseFrame.UIStroke, TweenInfo.new(0.2), { Transparency = 0 })
-                                    :Play()
-                                TweenService:Create(Drop, TweenInfo.new(0.2), { BackgroundTransparency = 0.935 }):Play()
+                                if painted ~= true then
+                                    TweenService:Create(Drop.ChooseFrame, TweenInfo.new(0.2),
+                                        { Size = UDim2.new(0, 1, 0, 12) }):Play()
+                                    TweenService:Create(Drop.ChooseFrame.UIStroke, TweenInfo.new(0.2), { Transparency = 0 })
+                                        :Play()
+                                    TweenService:Create(Drop, TweenInfo.new(0.2), { BackgroundTransparency = 0.935 }):Play()
+                                    Drop:SetAttribute("Painted", true)
+                                end
                                 table.insert(texts, Drop.OptionText.Text)
-                            else
+                            elseif painted ~= false then
                                 TweenService:Create(Drop.ChooseFrame, TweenInfo.new(0.1),
                                     { Size = UDim2.new(0, 0, 0, 0) }):Play()
                                 TweenService:Create(Drop.ChooseFrame.UIStroke, TweenInfo.new(0.1),
                                     { Transparency = 0.999 }):Play()
                                 TweenService:Create(Drop, TweenInfo.new(0.1), { BackgroundTransparency = 0.999 }):Play()
+                                Drop:SetAttribute("Painted", false)
                             end
                         end
                     end
@@ -3051,6 +3096,7 @@ function PandoruyHub:Window(GuiConfig)
                 -- Bangun (ulang) frame opsi dari list. Hanya dipanggil saat dropdown
                 -- dibuka / di-refresh — bukan saat load.
                 function DropdownFunc:_buildFrames(list)
+                    DropdownFunc._builtList = table.clone(list or {})
                     for _, f in ipairs(ScrollSelect:GetChildren()) do
                         if f.Name == "Option" then f:Destroy() end
                     end
@@ -3079,6 +3125,21 @@ function PandoruyHub:Window(GuiConfig)
 
                 -- Dipanggil saat dropdown dibuka: jalankan OnOpen (auto-refresh) bila ada,
                 -- lalu bangun frame opsi bila belum dirender (atau selalu rebuild untuk OnOpen).
+                -- A new option list: the pick stays (even one missing from the list) and nothing is
+                -- called or saved; an open list redraws in place, the search query still applied.
+                local function sameOptionList(a, b)
+                    if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+                    for i = 1, #a do
+                        local x, y = a[i], b[i]
+                        if type(x) == "table" and type(y) == "table" then
+                            if x.Value ~= y.Value or x.Label ~= y.Label then return false end
+                        elseif x ~= y then
+                            return false
+                        end
+                    end
+                    return true
+                end
+
                 function DropdownFunc:_openRefresh()
                     if DropdownConfig.OnOpen and typeof(DropdownConfig.OnOpen) == "function" then
                         local ok, newItems = pcall(DropdownConfig.OnOpen)
@@ -3088,7 +3149,7 @@ function PandoruyHub:Window(GuiConfig)
                     end
                     -- read after OnOpen: it may have set the list itself (SetOptions)
                     local list = DropdownFunc.Options
-                    if (not DropdownFunc._rendered) or DropdownConfig.OnOpen then
+                    if (not DropdownFunc._rendered) or (DropdownConfig.OnOpen and not sameOptionList(DropdownFunc._builtList, list)) then
                         DropdownFunc:_buildFrames(list)
                         DropdownFunc:Set(DropdownFunc.Value, true)  -- silent: repaint only
                     end
@@ -3111,20 +3172,6 @@ function PandoruyHub:Window(GuiConfig)
 
                 -- Init: TIDAK bangun frame opsi (hemat load). Cukup set teks terpilih +
                 -- fire callback dari nilai config/Default.
-                -- A new option list: the pick stays (even one missing from the list) and nothing is
-                -- called or saved; an open list redraws in place, the search query still applied.
-                local function sameOptionList(a, b)
-                    if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
-                    for i = 1, #a do
-                        local x, y = a[i], b[i]
-                        if type(x) == "table" and type(y) == "table" then
-                            if x.Value ~= y.Value or x.Label ~= y.Label then return false end
-                        elseif x ~= y then
-                            return false
-                        end
-                    end
-                    return true
-                end
 
                 function DropdownFunc:SetOptions(newList)
                     newList = newList or {}
